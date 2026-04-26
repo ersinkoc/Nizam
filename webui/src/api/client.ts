@@ -1,6 +1,7 @@
 import type {
   AuditEvent,
   DiffResponse,
+  DeployResult,
   Engine,
   GenerateResult,
   IRResponse,
@@ -93,5 +94,10 @@ export const api = {
       body: JSON.stringify(cluster)
     }),
   deleteCluster: (projectID: string, clusterID: string) =>
-    request<void>(`/api/v1/projects/${projectID}/clusters/${clusterID}`, { method: 'DELETE' })
+    request<void>(`/api/v1/projects/${projectID}/clusters/${clusterID}`, { method: 'DELETE' }),
+  deploy: (projectID: string, body: { target_id?: string; cluster_id?: string; dry_run?: boolean }) =>
+    request<DeployResult>(`/api/v1/projects/${projectID}/deploy`, {
+      method: 'POST',
+      body: JSON.stringify(body)
+    })
 };

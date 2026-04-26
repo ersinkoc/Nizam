@@ -1,6 +1,6 @@
 # Mizan Architecture
 
-Mizan is a local-first visual configuration architect for HAProxy and Nginx. It is built as a Go single-binary application with an embedded React/Vite WebUI. The current implementation is a working foundation: projects can be created or imported, persisted as JSON, edited as IR, visualized as topology, generated into HAProxy/Nginx config, validated, snapshotted, tagged, diffed, reverted, audited, and associated with deployment targets or clusters.
+Mizan is a local-first visual configuration architect for HAProxy and Nginx. It is built as a Go single-binary application with an embedded React/Vite WebUI. The current implementation is a working foundation: projects can be created or imported, persisted as JSON, edited as IR, visualized as topology, generated into HAProxy/Nginx config, validated, snapshotted, tagged, diffed, reverted, audited, associated with deployment targets or clusters, and previewed as a dry-run deployment plan.
 
 ## Current Project Status
 
@@ -14,6 +14,7 @@ flowchart LR
   Topology["Topology\nReact Flow graph\nDrag/connect updates IR"]:::done
   Audit["Audit\nAppend-only audit.jsonl\nWebUI panel"]:::done
   Targets["Target Registry\nTargets + clusters\nWebUI panel"]:::done
+  DeployPlan["Deploy Plan\nDry-run rollout steps\nAudit event"]:::done
   Deploy["SSH Deploy\nNot implemented yet"]:::todo
   Monitor["Live Monitoring\nNot implemented yet"]:::todo
 
@@ -21,7 +22,8 @@ flowchart LR
   IR --> Topology
   IR --> Audit
   Audit --> Targets
-  Targets --> Deploy
+  Targets --> DeployPlan
+  DeployPlan --> Deploy
   Validate --> Deploy
   Deploy --> Monitor
 
@@ -258,6 +260,37 @@ flowchart TD
 
 The current native validation wrapper is opportunistic: if `haproxy` or `nginx` is not on `PATH`, validation is marked as skipped rather than crashing the workflow.
 
+## Deployment Dry Run
+
+```mermaid
+sequenceDiagram
+  participant Browser as React WebUI
+  participant API as POST /deploy
+  participant Deploy as internal/deploy
+  participant Store as Store
+  participant Translate as Generator
+  participant Audit as audit.jsonl
+
+  Browser->>API: target_id or cluster_id, dry_run=true
+  API->>Deploy: Run(project, target selection)
+  Deploy->>Store: GetIR + ListTargets
+  Deploy->>Translate: Generate config per target engine
+  Deploy-->>API: rollout steps
+  API->>Audit: append deploy.run
+  API-->>Browser: dry-run plan
+```
+
+The deploy package now computes the concrete rollout steps for one target or a cluster: upload generated config, remote validate, install, reload, and optional post-reload probe. The WebUI currently invokes this as a dry run. The same backend path has command-runner and probe hooks for future real SSH execution.
+
+The same flow is exposed from the CLI:
+
+```sh
+mizan deploy --project <id> --target-id <target-id>
+mizan deploy --project <id> --cluster-id <cluster-id>
+```
+
+CLI deploy defaults to dry-run planning. Passing `--execute` switches to the real command runner.
+
 ## Topology Editing
 
 ```mermaid
@@ -454,6 +487,11 @@ mindmap
       tags
       audit.jsonl
       targets.json
+    Deployment
+      dry-run plan
+      target selection
+      cluster batches
+      audit event
     Snapshot Diff
       structural tree
       added removed modified
@@ -473,6 +511,7 @@ mindmap
       diff
       targets
       clusters
+      deploy preview
       audit
     CLI
       serve
@@ -480,6 +519,7 @@ mindmap
       snapshot
       generate
       validate
+      deploy
 ```
 
 ## Not Implemented Yet
@@ -502,7 +542,7 @@ flowchart LR
   DiffUI --> Wizard
 ```
 
-The codebase is now a working product foundation, not yet a full v1 implementation. Target and cluster persistence exists, but real SSH deployment and staged rollout execution are still future work. The next largest architectural slices are deployment, monitoring, full parser round-trip, richer wizard editing, and deeper diff UI.
+The codebase is now a working product foundation, not yet a full v1 implementation. Target and cluster persistence plus dry-run deployment planning exist, but real SSH execution, credential handling, and staged rollout safety gates are still future work. The next largest architectural slices are deployment execution, monitoring, full parser round-trip, richer wizard editing, and deeper diff UI.
 
 ## Design Principles
 

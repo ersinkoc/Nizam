@@ -14,6 +14,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/mizanproxy/mizan/internal/deploy"
 	"github.com/mizanproxy/mizan/internal/ir"
 	"github.com/mizanproxy/mizan/internal/ir/parser"
 	"github.com/mizanproxy/mizan/internal/server"
@@ -53,6 +54,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return generate(ctx, args[1:], stdout, stderr)
 	case "validate":
 		return validateCmd(ctx, args[1:], stdout, stderr)
+	case "deploy":
+		return deployCmd(ctx, args[1:], stdout, stderr)
 	default:
 		usage(stderr)
 		return fmt.Errorf("unknown command %q", args[0])
@@ -313,6 +316,49 @@ func validateCmd(ctx context.Context, args []string, stdout, stderr io.Writer) e
 	return json.NewEncoder(stdout).Encode(result)
 }
 
+func deployCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("deploy", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	home := fs.String("home", store.DefaultRoot(), "Mizan data directory")
+	projectID := fs.String("project", "", "project id")
+	targetID := fs.String("target-id", "", "deployment target id")
+	clusterID := fs.String("cluster-id", "", "deployment cluster id")
+	execute := fs.Bool("execute", false, "execute remote SSH commands instead of dry-run planning")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *projectID == "" {
+		return errors.New("--project is required")
+	}
+	if (*targetID == "") == (*clusterID == "") {
+		return errors.New("exactly one of --target-id or --cluster-id is required")
+	}
+	st := store.New(*home)
+	result, err := deploy.New().Run(ctx, st, deploy.Request{
+		ProjectID: *projectID,
+		TargetID:  *targetID,
+		ClusterID: *clusterID,
+		DryRun:    !*execute,
+	})
+	if err != nil {
+		return err
+	}
+	_ = st.AppendAudit(ctx, store.AuditEvent{
+		ProjectID:      *projectID,
+		Actor:          "cli",
+		Action:         "deploy.run",
+		IRSnapshotHash: result.SnapshotHash,
+		Outcome:        result.Status,
+		Metadata: map[string]any{
+			"dry_run":    result.DryRun,
+			"target_id":  result.TargetID,
+			"cluster_id": result.ClusterID,
+			"steps":      len(result.Steps),
+		},
+	})
+	return json.NewEncoder(stdout).Encode(result)
+}
+
 func parseEngines(v string) []ir.Engine {
 	var engines []ir.Engine
 	for _, part := range strings.Split(v, ",") {
@@ -337,5 +383,6 @@ Usage:
   mizan snapshot list --project <id>
   mizan generate --project <id> --target haproxy [--out haproxy.cfg]
   mizan validate --project <id> --target nginx
+  mizan deploy --project <id> --target-id <target-id>
   mizan version`)
 }

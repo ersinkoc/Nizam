@@ -15,7 +15,8 @@ import {
   Sun,
   Tag,
   Trash2,
-  TriangleAlert
+  TriangleAlert,
+  UploadCloud
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from './api/client';
@@ -23,6 +24,7 @@ import { TopologyCanvas } from './components/topology/TopologyCanvas';
 import { connectEntities, moveEntity } from './lib/ir-mutations';
 import type {
   AuditEvent,
+  DeployResult,
   DiffChange,
   Engine,
   GenerateResult,
@@ -113,6 +115,7 @@ export function App() {
   const [diffChanges, setDiffChanges] = useState<DiffChange[]>([]);
   const [audit, setAudit] = useState<AuditEvent[]>([]);
   const [targetsFile, setTargetsFile] = useState<TargetsResponse>({ targets: [], clusters: [] });
+  const [deployResult, setDeployResult] = useState<DeployResult | null>(null);
   const [target, setTarget] = useState<Engine>('haproxy');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -133,6 +136,7 @@ export function App() {
     setValidation(null);
     setDiffChanges([]);
     setTargetsFile({ targets: [], clusters: [] });
+    setDeployResult(null);
     setError('');
     api
       .getIR(active.id)
@@ -321,6 +325,36 @@ export function App() {
     try {
       await api.deleteCluster(active.id, clusterID);
       await reloadTargets(active.id);
+      await reloadAudit(active.id);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function previewDeployTarget(targetID: string) {
+    if (!active) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await api.deploy(active.id, { target_id: targetID, dry_run: true });
+      setDeployResult(result);
+      await reloadAudit(active.id);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function previewDeployCluster(clusterID: string) {
+    if (!active) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await api.deploy(active.id, { cluster_id: clusterID, dry_run: true });
+      setDeployResult(result);
       await reloadAudit(active.id);
     } catch (err) {
       setError((err as Error).message);
@@ -572,9 +606,14 @@ export function App() {
                   </div>
                   <small>{item.engine} to {item.config_path}</small>
                   <code>{item.reload_command}</code>
-                  <button onClick={() => deleteTarget(item.id)} disabled={busy} title="Delete target">
-                    <Trash2 size={15} />
-                  </button>
+                  <div className="target-card-actions">
+                    <button onClick={() => previewDeployTarget(item.id)} disabled={busy} title="Preview deployment">
+                      <UploadCloud size={15} />
+                    </button>
+                    <button onClick={() => deleteTarget(item.id)} disabled={busy} title="Delete target">
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
                 </article>
               )) : <p className="muted">No deployment targets yet.</p>}
             </div>
@@ -604,13 +643,19 @@ export function App() {
                     <span>{item.target_ids.length} target(s), parallelism {item.parallelism}</span>
                   </div>
                   <small>{item.gate_on_failure ? 'Stops on first failed deployment' : 'Continues after failures'}</small>
-                  <button onClick={() => deleteCluster(item.id)} disabled={busy} title="Delete cluster">
-                    <Trash2 size={15} />
-                  </button>
+                  <div className="target-card-actions">
+                    <button onClick={() => previewDeployCluster(item.id)} disabled={busy} title="Preview deployment">
+                      <UploadCloud size={15} />
+                    </button>
+                    <button onClick={() => deleteCluster(item.id)} disabled={busy} title="Delete cluster">
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
                 </article>
               )) : <p className="muted">No clusters yet.</p>}
             </div>
           </div>
+          <DeployPlan result={deployResult} />
         </section>
 
         <section className="panel snapshots">
@@ -700,6 +745,32 @@ function NativeStatus({ native }: { native: NativeResult }) {
   );
 }
 
+function DeployPlan({ result }: { result: DeployResult | null }) {
+  if (!result) {
+    return null;
+  }
+  return (
+    <div className="deploy-plan">
+      <div className="deploy-plan-head">
+        <strong>{result.dry_run ? 'Dry-run deployment plan' : 'Deployment run'}</strong>
+        <span>{result.status} / {result.steps.length} steps / {result.snapshot_hash.slice(0, 12)}</span>
+      </div>
+      <div className="deploy-steps">
+        {result.steps.map((step, index) => (
+          <article key={`${step.target_id}-${step.stage}-${index}`} className={`deploy-step ${step.status}`}>
+            <div>
+              <strong>{step.stage}</strong>
+              <span>{step.target_name} / batch {step.batch}</span>
+            </div>
+            {step.command && <code>{step.command}</code>}
+            {step.message && <small>{step.message}</small>}
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ConfigPreview({ config }: { config: string }) {
   if (!config) {
     return <pre className="config-preview empty">Generated config will appear here.</pre>;
@@ -738,7 +809,7 @@ function AuditList({ events }: { events: AuditEvent[] }) {
             <strong>{event.action}</strong>
             <span>{new Date(event.timestamp).toLocaleString()}</span>
           </div>
-          <small>{event.actor}{event.target_engine ? ` · ${event.target_engine}` : ''}{event.ir_snapshot_hash ? ` · ${event.ir_snapshot_hash.slice(0, 12)}` : ''}</small>
+          <small>{event.actor}{event.target_engine ? ` / ${event.target_engine}` : ''}{event.ir_snapshot_hash ? ` / ${event.ir_snapshot_hash.slice(0, 12)}` : ''}</small>
           {event.error_message && <p>{event.error_message}</p>}
         </article>
       ))}

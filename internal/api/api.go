@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/mizanproxy/mizan/internal/deploy"
 	"github.com/mizanproxy/mizan/internal/ir"
 	"github.com/mizanproxy/mizan/internal/ir/parser"
 	"github.com/mizanproxy/mizan/internal/store"
@@ -46,6 +47,7 @@ func Register(mux *http.ServeMux, st *store.Store) {
 	mux.HandleFunc("POST /api/v1/projects/{id}/ir/tag", h.tagSnapshot)
 	mux.HandleFunc("POST /api/v1/projects/{id}/generate", h.generate)
 	mux.HandleFunc("POST /api/v1/projects/{id}/validate", h.validate)
+	mux.HandleFunc("POST /api/v1/projects/{id}/deploy", h.deploy)
 	mux.HandleFunc("GET /api/v1/projects/{id}/audit", h.listAudit)
 	mux.HandleFunc("GET /api/v1/projects/{id}/targets", h.listTargets)
 	mux.HandleFunc("POST /api/v1/projects/{id}/targets", h.upsertTarget)
@@ -360,6 +362,41 @@ func (h *Handler) validate(w http.ResponseWriter, r *http.Request) {
 		errMsg = result.Native.Stderr
 	}
 	h.audit(r, r.PathValue("id"), "config.validate", "", req.Target, outcome, errMsg, map[string]any{"issues": len(result.Issues), "native_available": result.Native.Available})
+	writeJSON(w, http.StatusOK, result)
+}
+
+type deployRequest struct {
+	TargetID  string `json:"target_id"`
+	ClusterID string `json:"cluster_id"`
+	DryRun    *bool  `json:"dry_run"`
+}
+
+func (h *Handler) deploy(w http.ResponseWriter, r *http.Request) {
+	var req deployRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeProblem(w, http.StatusBadRequest, err)
+		return
+	}
+	dryRun := true
+	if req.DryRun != nil {
+		dryRun = *req.DryRun
+	}
+	result, err := deploy.New().Run(r.Context(), h.store, deploy.Request{
+		ProjectID: r.PathValue("id"),
+		TargetID:  req.TargetID,
+		ClusterID: req.ClusterID,
+		DryRun:    dryRun,
+	})
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, err)
+		return
+	}
+	h.audit(r, r.PathValue("id"), "deploy.run", result.SnapshotHash, "", result.Status, "", map[string]any{
+		"dry_run":    result.DryRun,
+		"target_id":  result.TargetID,
+		"cluster_id": result.ClusterID,
+		"steps":      len(result.Steps),
+	})
 	writeJSON(w, http.StatusOK, result)
 }
 

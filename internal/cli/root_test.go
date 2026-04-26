@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/mizanproxy/mizan/internal/ir"
 	"github.com/mizanproxy/mizan/internal/store"
 )
 
@@ -86,6 +87,36 @@ func TestProjectGenerateValidateAndSnapshotCommands(t *testing.T) {
 	}
 	if !bytes.Contains(stdout.Bytes(), []byte(`"target":"haproxy"`)) {
 		t.Fatalf("validate output unexpected: %s", stdout.String())
+	}
+	st := store.New(home)
+	target, err := st.UpsertTarget(context.Background(), created.Project.ID, store.Target{Name: "edge-01", Host: "lb1.example.com", Engine: ir.EngineHAProxy})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cluster, err := st.UpsertCluster(context.Background(), created.Project.ID, store.Cluster{Name: "prod", TargetIDs: []string{target.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	if err := Run(context.Background(), []string{"deploy", "--home", home, "--project", created.Project.ID, "--target-id", target.ID}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte(`"dry_run":true`)) || !bytes.Contains(stdout.Bytes(), []byte(`"target_id":"`+target.ID+`"`)) {
+		t.Fatalf("deploy target output unexpected: %s", stdout.String())
+	}
+	stdout.Reset()
+	if err := Run(context.Background(), []string{"deploy", "--home", home, "--project", created.Project.ID, "--cluster-id", cluster.ID}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte(`"cluster_id":"`+cluster.ID+`"`)) {
+		t.Fatalf("deploy cluster output unexpected: %s", stdout.String())
+	}
+	events, err := st.ListAudit(context.Background(), created.Project.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 || events[0].Action != "deploy.run" || events[0].Actor != "cli" {
+		t.Fatalf("unexpected deploy audit events: %+v", events)
 	}
 	stdout.Reset()
 	if err := Run(context.Background(), []string{"snapshot", "list", "--home", home, "--project", created.Project.ID}, &stdout, &stderr); err != nil {
@@ -206,6 +237,10 @@ func TestCLIErrorBranches(t *testing.T) {
 	expectErr("validate", "--bad")
 	expectErr("validate", "--home", home)
 	expectErr("validate", "--home", home, "--project", "missing")
+	expectErr("deploy", "--bad")
+	expectErr("deploy", "--home", home)
+	expectErr("deploy", "--home", home, "--project", "missing")
+	expectErr("deploy", "--home", home, "--project", "missing", "--target-id", "t_1")
 
 	stdout.Reset()
 	if err := Run(context.Background(), []string{"project", "new", "--home", home, "positional"}, &stdout, &stderr); err != nil {
@@ -221,6 +256,8 @@ func TestCLIErrorBranches(t *testing.T) {
 	}
 	expectErr("generate", "--home", home, "--project", created.Project.ID, "--target", "bad")
 	expectErr("validate", "--home", home, "--project", created.Project.ID, "--target", "bad")
+	expectErr("deploy", "--home", home, "--project", created.Project.ID, "--target-id", "t_1", "--cluster-id", "c_1")
+	expectErr("deploy", "--home", home, "--project", created.Project.ID, "--target-id", "missing")
 
 	outPath := filepath.Join(t.TempDir(), "haproxy.cfg")
 	if err := Run(context.Background(), []string{"generate", "--home", home, "--project", created.Project.ID, "--out", outPath}, &stdout, &stderr); err != nil {

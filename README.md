@@ -16,6 +16,7 @@ The current codebase is a working product foundation with backend statement cove
 - Snapshots, tags, snapshot retrieval, revert, and diff
 - Append-only project audit log in `audit.jsonl`
 - Deployment targets and clusters persisted in `targets.json`
+- Deployment dry-run planning for single targets or clusters via generated rollout steps
 - Topology canvas with drag/connect gestures that update the IR
 
 ## Run
@@ -50,6 +51,7 @@ go run ./cmd/mizan snapshot list --project <id>
 go run ./cmd/mizan snapshot tag --project <id> --label release-1 <snapshot-ref>
 go run ./cmd/mizan generate --project <id> --target haproxy
 go run ./cmd/mizan validate --project <id> --target nginx
+go run ./cmd/mizan deploy --project <id> --target-id <target-id>
 ```
 
 ## Build

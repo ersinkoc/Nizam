@@ -108,6 +108,14 @@ func TestProjectLifecycleEndpoints(t *testing.T) {
 	if res.Code != http.StatusOK || !bytes.Contains(res.Body.Bytes(), []byte("prod-a")) {
 		t.Fatalf("targets status=%d body=%s", res.Code, res.Body.String())
 	}
+	res = doJSON(mux, http.MethodPost, "/api/v1/projects/"+id+"/deploy", map[string]any{"target_id": target.ID, "dry_run": true})
+	if res.Code != http.StatusOK || !bytes.Contains(res.Body.Bytes(), []byte(`"dry_run":true`)) {
+		t.Fatalf("deploy target status=%d body=%s", res.Code, res.Body.String())
+	}
+	res = doJSON(mux, http.MethodPost, "/api/v1/projects/"+id+"/deploy", map[string]any{"cluster_id": cluster.ID})
+	if res.Code != http.StatusOK || !bytes.Contains(res.Body.Bytes(), []byte(`"cluster_id":"`+cluster.ID+`"`)) {
+		t.Fatalf("deploy cluster status=%d body=%s", res.Code, res.Body.String())
+	}
 	res = doJSON(mux, http.MethodDelete, "/api/v1/projects/"+id+"/targets/"+target.ID, nil)
 	if res.Code != http.StatusNoContent {
 		t.Fatalf("delete target status=%d body=%s", res.Code, res.Body.String())
@@ -252,6 +260,7 @@ func TestAPIErrorBranches(t *testing.T) {
 		{"/api/v1/projects/" + id + "/ir/tag", map[string]any{"snapshot_ref": "missing", "label": "bad"}, http.StatusBadRequest},
 		{"/api/v1/projects/" + id + "/generate", map[string]string{"target": "bad"}, http.StatusBadRequest},
 		{"/api/v1/projects/" + id + "/validate", map[string]string{"target": "bad"}, http.StatusBadRequest},
+		{"/api/v1/projects/" + id + "/deploy", map[string]string{}, http.StatusBadRequest},
 		{"/api/v1/projects/" + id + "/targets", map[string]string{"name": ""}, http.StatusBadRequest},
 		{"/api/v1/projects/" + id + "/clusters", map[string]string{"name": ""}, http.StatusBadRequest},
 	} {
@@ -374,6 +383,7 @@ func TestAPIMoreBranches(t *testing.T) {
 		{"/api/v1/projects/" + id + "/ir/revert", map[string]string{"snapshot_ref": "missing"}, http.StatusInternalServerError},
 		{"/api/v1/projects/" + id + "/ir/diff", "{bad", http.StatusBadRequest},
 		{"/api/v1/projects/" + id + "/ir/tag", "{bad", http.StatusBadRequest},
+		{"/api/v1/projects/" + id + "/deploy", "{bad", http.StatusBadRequest},
 		{"/api/v1/projects/" + id + "/targets", "{bad", http.StatusBadRequest},
 		{"/api/v1/projects/" + id + "/clusters", "{bad", http.StatusBadRequest},
 	} {

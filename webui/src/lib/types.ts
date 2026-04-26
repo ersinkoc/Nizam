@@ -185,3 +185,26 @@ export interface TargetsResponse {
   targets: Target[];
   clusters: Cluster[];
 }
+
+export interface DeployStep {
+  target_id: string;
+  target_name: string;
+  engine: Engine;
+  stage: string;
+  status: 'success' | 'failed' | 'skipped';
+  command?: string;
+  message?: string;
+  batch: number;
+}
+
+export interface DeployResult {
+  project_id: string;
+  target_id?: string;
+  cluster_id?: string;
+  snapshot_hash: string;
+  dry_run: boolean;
+  status: 'success' | 'failed';
+  started_at: string;
+  finished_at: string;
+  steps: DeployStep[];
+}

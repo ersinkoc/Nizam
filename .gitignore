@@ -8,3 +8,4 @@ webui/vite.config.d.ts
 coverage/
 *.log
 .env
+*.out
