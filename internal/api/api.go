@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -62,6 +64,7 @@ func Register(mux *http.ServeMux, st *store.Store) {
 	mux.HandleFunc("GET /api/v1/projects/{id}/monitor/stream", h.monitorStream)
 	mux.HandleFunc("GET /api/v1/projects/{id}/events", h.projectEvents)
 	mux.HandleFunc("GET /api/v1/projects/{id}/audit", h.listAudit)
+	mux.HandleFunc("GET /api/v1/projects/{id}/audit.csv", h.exportAuditCSV)
 	mux.HandleFunc("GET /api/v1/projects/{id}/targets", h.listTargets)
 	mux.HandleFunc("POST /api/v1/projects/{id}/targets", h.upsertTarget)
 	mux.HandleFunc("POST /api/v1/projects/{id}/targets/{targetID}/probe", h.probeTarget)
@@ -593,6 +596,39 @@ func (h *Handler) listAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, events)
+}
+
+func (h *Handler) exportAuditCSV(w http.ResponseWriter, r *http.Request) {
+	filter, err := auditFilterFromRequest(r)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, err)
+		return
+	}
+	events, err := auditEventsFromStore(h.store, r, r.PathValue("id"), filter)
+	if err != nil {
+		writeProblem(w, http.StatusInternalServerError, err)
+		return
+	}
+	var buf bytes.Buffer
+	cw := csv.NewWriter(&buf)
+	_ = cw.Write([]string{"event_id", "timestamp", "actor", "action", "outcome", "target_engine", "ir_snapshot_hash", "error_message"})
+	for _, event := range events {
+		_ = cw.Write([]string{
+			event.EventID,
+			event.Timestamp.UTC().Format(time.RFC3339),
+			event.Actor,
+			event.Action,
+			event.Outcome,
+			string(event.TargetEngine),
+			event.IRSnapshotHash,
+			event.ErrorMessage,
+		})
+	}
+	cw.Flush()
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", r.PathValue("id")+"-audit.csv"))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buf.Bytes())
 }
 
 func auditFilterFromRequest(r *http.Request) (store.AuditFilter, error) {

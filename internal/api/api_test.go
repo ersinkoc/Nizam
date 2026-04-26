@@ -524,12 +524,20 @@ func TestAuditFilterEndpoint(t *testing.T) {
 	if res.Code != http.StatusOK || !bytes.Contains(res.Body.Bytes(), []byte("target.probe")) || bytes.Contains(res.Body.Bytes(), []byte("config.generate")) {
 		t.Fatalf("filtered audit status=%d body=%s", res.Code, res.Body.String())
 	}
+	res = doJSON(mux, http.MethodGet, strings.Replace(path, "/audit?", "/audit.csv?", 1), nil)
+	if res.Code != http.StatusOK || res.Header().Get("Content-Type") != "text/csv; charset=utf-8" || !bytes.Contains(res.Body.Bytes(), []byte("event_id,timestamp,actor,action,outcome,target_engine")) || !bytes.Contains(res.Body.Bytes(), []byte("target.probe")) {
+		t.Fatalf("audit csv status=%d type=%q body=%s", res.Code, res.Header().Get("Content-Type"), res.Body.String())
+	}
+	if got := res.Header().Get("Content-Disposition"); !strings.Contains(got, meta.ID+"-audit.csv") {
+		t.Fatalf("unexpected audit csv disposition %q", got)
+	}
 	for _, path := range []string{
 		"/api/v1/projects/" + meta.ID + "/audit?limit=bad",
 		"/api/v1/projects/" + meta.ID + "/audit?limit=0",
 		"/api/v1/projects/" + meta.ID + "/audit?from=bad",
 		"/api/v1/projects/" + meta.ID + "/audit?to=bad",
 		"/api/v1/projects/" + meta.ID + "/audit?target_engine=bad",
+		"/api/v1/projects/" + meta.ID + "/audit.csv?target_engine=bad",
 	} {
 		if res := doJSON(mux, http.MethodGet, path, nil); res.Code != http.StatusBadRequest {
 			t.Fatalf("%s status=%d body=%s", path, res.Code, res.Body.String())
@@ -778,6 +786,10 @@ func TestAPIMoreBranches(t *testing.T) {
 	res = doJSON(mux, http.MethodGet, "/api/v1/projects/"+id+"/audit?limit=1", nil)
 	if res.Code != http.StatusInternalServerError {
 		t.Fatalf("audit corrupt status=%d body=%s", res.Code, res.Body.String())
+	}
+	res = doJSON(mux, http.MethodGet, "/api/v1/projects/"+id+"/audit.csv?limit=1", nil)
+	if res.Code != http.StatusInternalServerError {
+		t.Fatalf("audit csv corrupt status=%d body=%s", res.Code, res.Body.String())
 	}
 	if res = doJSON(mux, http.MethodGet, "/api/v1/projects/missing/targets", nil); res.Code != http.StatusNotFound {
 		t.Fatalf("missing targets status=%d body=%s", res.Code, res.Body.String())

@@ -343,6 +343,16 @@ export function App() {
     }
   }
 
+  function exportAuditCSV() {
+    if (!active) return;
+    const link = document.createElement('a');
+    link.href = api.auditCSVURL(active.id, { ...auditFilters, limit: 1000 });
+    link.download = `${active.name.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '') || active.id}-audit.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
   async function reloadTargets(projectID = active?.id ?? '') {
     if (!projectID) return;
     setTargetsFile(await api.listTargets(projectID));
@@ -854,6 +864,9 @@ export function App() {
               <StreamStatus value={auditStream} />
               <button disabled={!active || busy} onClick={() => reloadAudit()}>
                 <RefreshCw size={16} /> Refresh
+              </button>
+              <button disabled={!active || busy} onClick={exportAuditCSV}>
+                <Download size={16} /> CSV
               </button>
             </div>
           </div>

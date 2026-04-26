@@ -36,6 +36,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+function auditFilterParams(filters: AuditFilters = { limit: 100 }) {
+  const params = new URLSearchParams();
+  params.set('limit', String(filters.limit ?? 100));
+  if (filters.from) params.set('from', new Date(filters.from).toISOString());
+  if (filters.to) params.set('to', new Date(filters.to).toISOString());
+  if (filters.actor) params.set('actor', filters.actor);
+  if (filters.action) params.set('action', filters.action);
+  if (filters.outcome) params.set('outcome', filters.outcome);
+  if (filters.target_engine) params.set('target_engine', filters.target_engine);
+  return params;
+}
+
 export const api = {
   listProjects: () => request<ProjectMeta[]>('/api/v1/projects'),
   createProject: (body: { name: string; description: string; engines: Engine[] }) =>
@@ -85,16 +97,11 @@ export const api = {
       body: JSON.stringify({ from_hash: fromHash, to_hash: toHash })
     }),
   listAudit: (projectID: string, filters: AuditFilters = { limit: 100 }) => {
-    const params = new URLSearchParams();
-    params.set('limit', String(filters.limit ?? 100));
-    if (filters.from) params.set('from', new Date(filters.from).toISOString());
-    if (filters.to) params.set('to', new Date(filters.to).toISOString());
-    if (filters.actor) params.set('actor', filters.actor);
-    if (filters.action) params.set('action', filters.action);
-    if (filters.outcome) params.set('outcome', filters.outcome);
-    if (filters.target_engine) params.set('target_engine', filters.target_engine);
+    const params = auditFilterParams(filters);
     return request<AuditEvent[]>(`/api/v1/projects/${projectID}/audit?${params.toString()}`);
   },
+  auditCSVURL: (projectID: string, filters: AuditFilters = { limit: 100 }) =>
+    `/api/v1/projects/${projectID}/audit.csv?${auditFilterParams(filters).toString()}`,
   listTargets: (projectID: string) => request<TargetsResponse>(`/api/v1/projects/${projectID}/targets`),
   upsertTarget: (projectID: string, target: Partial<Target>) =>
     request<Target>(`/api/v1/projects/${projectID}/targets`, {

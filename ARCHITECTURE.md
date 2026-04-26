@@ -458,6 +458,7 @@ sequenceDiagram
   EventStream->>Audit: poll recent events
   EventStream-->>API: SSE audit event
   API->>Audit: list filtered by actor/action/outcome/engine/time
+  API->>Audit: export filtered CSV
 
   API->>Store: TagSnapshot(ref, label)
   Store->>Tags: upsert label -> ref
@@ -482,6 +483,7 @@ flowchart LR
   Targets["Targets / clusters panel"]
   Audit["Audit panel"]
   AuditFilters["Audit filters\nactor/action/outcome/engine"]
+  AuditCSV["Audit CSV export"]
   EventStream["Project event stream"]
 
   APIClient --> App
@@ -493,6 +495,8 @@ flowchart LR
   App --> Audit
   App --> AuditFilters
   AuditFilters --> APIClient
+  AuditFilters --> AuditCSV
+  AuditCSV --> APIClient
   APIClient --> EventStream
   EventStream --> Audit
   Topology -->|move/connect| App
@@ -584,6 +588,7 @@ mindmap
       audit.jsonl
       audit SSE stream
       audit filters
+      audit CSV export
       targets.json
     Deployment
       dry-run plan
