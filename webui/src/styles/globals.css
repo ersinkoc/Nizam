@@ -867,6 +867,33 @@ textarea {
   gap: 12px;
 }
 
+.monitor-stream {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+}
+
+.monitor-stream span {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+.monitor-stream.live span {
+  background: var(--accent);
+}
+
+.monitor-stream.connecting span {
+  background: var(--warn);
+}
+
+.monitor-stream.error span {
+  background: var(--danger);
+}
+
 .monitor-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(130px, 1fr));

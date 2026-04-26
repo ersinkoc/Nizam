@@ -119,6 +119,7 @@ export function App() {
   const [targetsFile, setTargetsFile] = useState<TargetsResponse>({ targets: [], clusters: [] });
   const [deployResult, setDeployResult] = useState<DeployResult | null>(null);
   const [monitorSnapshot, setMonitorSnapshot] = useState<MonitorSnapshot | null>(null);
+  const [monitorStream, setMonitorStream] = useState<'idle' | 'connecting' | 'live' | 'error'>('idle');
   const [target, setTarget] = useState<Engine>('haproxy');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -154,6 +155,29 @@ export function App() {
       })
       .catch((err: Error) => setError(err.message));
   }, [active]);
+
+  useEffect(() => {
+    if (!active || typeof EventSource === 'undefined') {
+      setMonitorStream('idle');
+      return;
+    }
+    setMonitorStream('connecting');
+    const source = new EventSource(api.monitorStreamURL(active.id));
+    const onSnapshot = (event: Event) => {
+      try {
+        setMonitorSnapshot(JSON.parse((event as MessageEvent<string>).data) as MonitorSnapshot);
+        setMonitorStream('live');
+      } catch (err) {
+        setMonitorStream('error');
+      }
+    };
+    source.addEventListener('snapshot', onSnapshot);
+    source.onerror = () => setMonitorStream('error');
+    return () => {
+      source.removeEventListener('snapshot', onSnapshot);
+      source.close();
+    };
+  }, [active?.id]);
 
   const model = irResponse?.ir ?? null;
   const counts = useMemo(
@@ -682,7 +706,7 @@ export function App() {
               <RefreshCw size={16} /> Refresh
             </button>
           </div>
-          <MonitorPanel snapshot={monitorSnapshot} />
+          <MonitorPanel snapshot={monitorSnapshot} stream={monitorStream} />
         </section>
 
         <section className="panel snapshots">
@@ -798,12 +822,17 @@ function DeployPlan({ result }: { result: DeployResult | null }) {
   );
 }
 
-function MonitorPanel({ snapshot }: { snapshot: MonitorSnapshot | null }) {
+function MonitorPanel({ snapshot, stream }: { snapshot: MonitorSnapshot | null; stream: 'idle' | 'connecting' | 'live' | 'error' }) {
   if (!snapshot) {
     return <div className="monitor-empty">No monitor snapshot loaded.</div>;
   }
+  const streamLabel = stream === 'live' ? 'Live' : stream === 'connecting' ? 'Connecting' : stream === 'error' ? 'Reconnecting' : 'Manual';
   return (
     <div className="monitor-body">
+      <div className={`monitor-stream ${stream}`}>
+        <span aria-hidden="true" />
+        <small>{streamLabel}</small>
+      </div>
       <div className="monitor-summary">
         <Metric icon={<Server />} label="Targets" value={snapshot.summary.total_targets} />
         <Metric icon={<CheckCircle2 />} label="Healthy" value={snapshot.summary.healthy} />

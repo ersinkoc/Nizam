@@ -340,6 +340,7 @@ flowchart LR
   Monitor --> Stream
   Monitor --> CLI
   Monitor --> CLIStream
+  Stream --> UI
   API --> UI
 ```
 
@@ -347,7 +348,7 @@ The monitoring layer exposes a stable snapshot contract for registered targets. 
 
 Nginx targets can provide a `monitor_endpoint` that returns OSS `stub_status` text. Mizan parses active connections, accepted/handled/request counters, and reading/writing/waiting gauges. Parsed Nginx snapshots are `healthy` unless accepted connections exceed handled connections, which is surfaced as `warning`.
 
-Targets without a monitor endpoint return `unknown`, which keeps the API, CLI, and WebUI behavior predictable. The same snapshot contract is also exposed as an SSE stream at `/api/v1/projects/{id}/monitor/stream`; it emits `snapshot` events immediately and then on an interval, with test-friendly `limit` and `interval` query controls. The CLI mirrors this behavior with `mizan monitor stream`, emitting one JSON snapshot per line for terminal or script consumers.
+Targets without a monitor endpoint return `unknown`, which keeps the API, CLI, and WebUI behavior predictable. The same snapshot contract is also exposed as an SSE stream at `/api/v1/projects/{id}/monitor/stream`; it emits `snapshot` events immediately and then on an interval, with test-friendly `limit` and `interval` query controls. The WebUI consumes this stream through `EventSource` while a project is open, and the CLI mirrors it with `mizan monitor stream`, emitting one JSON snapshot per line for terminal or script consumers.
 
 ## Topology Editing
 
@@ -555,6 +556,7 @@ mindmap
       CLI snapshot
       CLI stream
       WebUI panel
+      WebUI live stream
       SSE stream endpoint
       HAProxy show stat CSV
       Nginx stub_status
