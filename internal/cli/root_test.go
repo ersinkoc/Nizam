@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -193,6 +195,32 @@ func TestProjectGenerateValidateAndSnapshotCommands(t *testing.T) {
 	if !bytes.Contains(stdout.Bytes(), []byte(`"cluster_id":"`+cluster.ID+`"`)) {
 		t.Fatalf("deploy cluster output unexpected: %s", stdout.String())
 	}
+	sshDir := t.TempDir()
+	oldPath := os.Getenv("PATH")
+	t.Cleanup(func() { _ = os.Setenv("PATH", oldPath) })
+	script := filepath.Join(sshDir, "ssh")
+	body := "#!/bin/sh\ncat >/dev/null\necho fake-ssh \"$@\"\n"
+	if runtime.GOOS == "windows" {
+		script += ".bat"
+		body = "@echo off\r\nmore > nul\r\necho fake-ssh %*\r\n"
+	}
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Setenv("PATH", sshDir+string(os.PathListSeparator)+oldPath); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	if err := Run(context.Background(), []string{"secret", "set", "--home", home, "--id", target.ID, "--username", "vault-user", "--private-key", "PRIVATE KEY", "--vault-passphrase", "vault-pass"}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	if err := Run(context.Background(), []string{"deploy", "--home", home, "--project", created.Project.ID, "--target-id", target.ID, "--execute", "--vault-passphrase", "vault-pass"}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte(`"dry_run":false`)) || !bytes.Contains(stdout.Bytes(), []byte(`"status":"success"`)) {
+		t.Fatalf("deploy execute output unexpected: %s", stdout.String())
+	}
 	stdout.Reset()
 	if err := Run(context.Background(), []string{"monitor", "snapshot", "--home", home, "--project", created.Project.ID}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
@@ -212,8 +240,11 @@ func TestProjectGenerateValidateAndSnapshotCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 2 || events[0].Action != "deploy.run" || events[0].Actor != "cli" {
+	if len(events) != 3 || events[0].Action != "deploy.run" || events[0].Actor != "cli" {
 		t.Fatalf("unexpected deploy audit events: %+v", events)
+	}
+	if got := fmt.Sprint(events[0].Metadata["credentials"]); !strings.Contains(got, "vault") || strings.Contains(got, "PRIVATE KEY") || strings.Contains(got, "vault-user") {
+		t.Fatalf("unexpected deploy credential audit metadata: %v", events[0].Metadata["credentials"])
 	}
 	stdout.Reset()
 	if err := Run(context.Background(), []string{"audit", "show", "--home", home, "--project", created.Project.ID, "--action", "deploy.run", "--actor", "cli", "--outcome", "success", "--from", "2000-01-01T00:00:00Z", "--to", "2100-01-01T00:00:00Z", "--limit", "1"}, &stdout, &stderr); err != nil {
@@ -308,6 +339,18 @@ func TestSecretCommands(t *testing.T) {
 	}
 	if !bytes.Contains(stdout.Bytes(), []byte("ssh-pass")) || !bytes.Contains(stdout.Bytes(), []byte("PRIVATE KEY")) {
 		t.Fatalf("secret reveal output unexpected: %s", stdout.String())
+	}
+	provider := deployCredentialProvider(home, []byte("vault-pass"))
+	secret, err := provider(context.Background(), store.Target{ID: "target_1"})
+	if err != nil || secret.Username != "root" || secret.Password != "ssh-pass" {
+		t.Fatalf("credential provider secret=%+v err=%v", secret, err)
+	}
+	secret, err = provider(context.Background(), store.Target{ID: "missing"})
+	if err != nil || secret != (secrets.Secret{}) {
+		t.Fatalf("missing credential provider secret=%+v err=%v", secret, err)
+	}
+	if _, err := deployCredentialProvider(home, []byte("bad-pass"))(context.Background(), store.Target{ID: "target_1"}); err == nil {
+		t.Fatal("expected credential provider decrypt error")
 	}
 	stdout.Reset()
 	if err := Run(context.Background(), []string{"secret", "delete", "--home", home, "--id", "target_1"}, &stdout, &stderr); err != nil {
@@ -485,6 +528,9 @@ func TestCLIErrorBranches(t *testing.T) {
 	}
 	if got := firstNonEmpty("", ""); got != "" {
 		t.Fatalf("firstNonEmpty empty=%q", got)
+	}
+	if got := deployCredentialProvider(home, nil); got != nil {
+		t.Fatal("expected nil credential provider without passphrase")
 	}
 	if got := secretsRoot("home"); got != filepath.Join("home", "secrets") {
 		t.Fatalf("secretsRoot=%q", got)

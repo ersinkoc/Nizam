@@ -981,6 +981,7 @@ function DeployPlan({ result }: { result: DeployResult | null }) {
               <span>{step.target_name} / batch {step.batch}</span>
             </div>
             {step.command && <code>{step.command}</code>}
+            {step.credential_source && <small>credential: {step.credential_source === 'vault' ? 'vault' : 'local ssh'}</small>}
             {step.message && <small>{step.message}</small>}
           </article>
         ))}

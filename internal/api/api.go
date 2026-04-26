@@ -470,10 +470,11 @@ func (h *Handler) deploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.audit(r, r.PathValue("id"), "deploy.run", result.SnapshotHash, "", result.Status, "", map[string]any{
-		"dry_run":    result.DryRun,
-		"target_id":  result.TargetID,
-		"cluster_id": result.ClusterID,
-		"steps":      len(result.Steps),
+		"dry_run":     result.DryRun,
+		"target_id":   result.TargetID,
+		"cluster_id":  result.ClusterID,
+		"steps":       len(result.Steps),
+		"credentials": deploy.CredentialSources(result.Steps),
 	})
 	writeJSON(w, http.StatusOK, result)
 }

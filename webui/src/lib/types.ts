@@ -214,6 +214,7 @@ export interface DeployStep {
   status: 'success' | 'failed' | 'skipped';
   command?: string;
   message?: string;
+  credential_source?: 'vault' | 'local_ssh';
   batch: number;
 }
 

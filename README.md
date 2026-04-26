@@ -23,6 +23,7 @@ The current codebase is a working product foundation with backend statement cove
 - Deployment targets and clusters persisted in `targets.json`
 - CLI secret management for encrypted target credentials
 - Deployment dry-run planning for single targets or clusters via generated rollout steps
+- CLI deployment execution through the local `ssh` command with vault-backed username/private-key support
 - Target probe checks for configured post-reload or monitor endpoints
 - Monitor snapshots for registered targets through API, CLI, and WebUI
 - Monitor SSE stream endpoint for repeated target health snapshots
@@ -79,6 +80,7 @@ go run ./cmd/mizan validate --project <id> --target nginx
 go run ./cmd/mizan deploy --project <id> --target-id <target-id>
 go run ./cmd/mizan audit show --project <id> --action deploy.run --csv --out audit.csv
 go run ./cmd/mizan secret set --id <target-id> --username root --private-key-file ~/.ssh/id_ed25519 --vault-passphrase "$MIZAN_VAULT_PASSPHRASE"
+go run ./cmd/mizan deploy --project <id> --target-id <target-id> --execute --vault-passphrase "$MIZAN_VAULT_PASSPHRASE"
 go run ./cmd/mizan secret list
 go run ./cmd/mizan monitor snapshot --project <id>
 go run ./cmd/mizan monitor stream --project <id> --limit 10 --interval 5s

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -136,6 +137,16 @@ func TestProjectLifecycleEndpoints(t *testing.T) {
 	res = doJSON(mux, http.MethodPost, "/api/v1/projects/"+id+"/deploy", map[string]any{"cluster_id": cluster.ID})
 	if res.Code != http.StatusOK || !bytes.Contains(res.Body.Bytes(), []byte(`"cluster_id":"`+cluster.ID+`"`)) {
 		t.Fatalf("deploy cluster status=%d body=%s", res.Code, res.Body.String())
+	}
+	events, err := st.ListAudit(t.Context(), id, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].Action != "deploy.run" {
+		t.Fatalf("unexpected deploy audit event: %+v", events)
+	}
+	if got := fmt.Sprint(events[0].Metadata["credentials"]); strings.Contains(got, "vault") {
+		t.Fatalf("unexpected dry-run credential audit metadata: %v", events[0].Metadata["credentials"])
 	}
 	res = doJSON(mux, http.MethodDelete, "/api/v1/projects/"+id+"/targets/"+target.ID, nil)
 	if res.Code != http.StatusNoContent {

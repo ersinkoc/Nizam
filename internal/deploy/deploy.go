@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/mizanproxy/mizan/internal/ir"
+	"github.com/mizanproxy/mizan/internal/secrets"
 	"github.com/mizanproxy/mizan/internal/store"
 	"github.com/mizanproxy/mizan/internal/validate"
 )
@@ -42,6 +44,7 @@ type Step struct {
 	Status     string    `json:"status"`
 	Command    string    `json:"command,omitempty"`
 	Message    string    `json:"message,omitempty"`
+	Credential string    `json:"credential_source,omitempty"`
 	Batch      int       `json:"batch"`
 }
 
@@ -54,14 +57,31 @@ type ProbeResult struct {
 	CheckedAt  string `json:"checked_at"`
 }
 
-type Runner func(context.Context, store.Target, string, string) (string, error)
+type Runner func(context.Context, store.Target, secrets.Secret, string, string) (string, error)
 type Prober func(context.Context, string) error
+type CredentialProvider func(context.Context, store.Target) (secrets.Secret, error)
 
 type Deployer struct {
-	Runner Runner
-	Prober Prober
-	Now    func() time.Time
+	Runner      Runner
+	Prober      Prober
+	Credentials CredentialProvider
+	Now         func() time.Time
 }
+
+var (
+	createTempKeyFile = func() (string, error) {
+		f, err := os.CreateTemp("", "mizan-ssh-key-*")
+		if err != nil {
+			return "", err
+		}
+		name := f.Name()
+		_ = f.Close()
+		return name, nil
+	}
+	writeKeyFile  = os.WriteFile
+	chmodKeyFile  = os.Chmod
+	removeKeyFile = os.Remove
+)
 
 func New() Deployer {
 	return Deployer{Runner: sshRunner, Prober: httpProbe, Now: func() time.Time { return time.Now().UTC() }}
@@ -108,7 +128,21 @@ func (d Deployer) Run(ctx context.Context, st *store.Store, req Request) (Result
 	}
 	for index, target := range selected {
 		batch := index/parallelism + 1
-		steps := d.runTarget(ctx, model, req.ProjectID, target, batch, req.DryRun)
+		credential := secrets.Secret{}
+		if !req.DryRun && d.Credentials != nil {
+			var err error
+			credential, err = d.Credentials(ctx, target)
+			if err != nil {
+				steps := []Step{credentialFailureStep(target, batch, err)}
+				result.Steps = append(result.Steps, steps...)
+				result.Status = "failed"
+				if gate {
+					break
+				}
+				continue
+			}
+		}
+		steps := d.runTarget(ctx, model, req.ProjectID, target, credential, batch, req.DryRun)
 		result.Steps = append(result.Steps, steps...)
 		if hasFailed(steps) {
 			result.Status = "failed"
@@ -121,7 +155,7 @@ func (d Deployer) Run(ctx context.Context, st *store.Store, req Request) (Result
 	return result, nil
 }
 
-func (d Deployer) runTarget(ctx context.Context, model *ir.Model, projectID string, target store.Target, batch int, dryRun bool) []Step {
+func (d Deployer) runTarget(ctx context.Context, model *ir.Model, projectID string, target store.Target, credential secrets.Secret, batch int, dryRun bool) []Step {
 	generated, err := validate.Generate(model, target.Engine)
 	steps := []Step{{
 		TargetID:   target.ID,
@@ -151,12 +185,14 @@ func (d Deployer) runTarget(ctx context.Context, model *ir.Model, projectID stri
 		if dryRun {
 			step.Status = "skipped"
 			step.Message = "dry run"
-		} else if output, runErr := d.Runner(ctx, target, item.cmd, item.input); runErr != nil {
+		} else if output, runErr := d.Runner(ctx, target, credential, item.cmd, item.input); runErr != nil {
+			step.Credential = credentialSource(credential)
 			step.Status = "failed"
 			step.Message = strings.TrimSpace(output + "\n" + runErr.Error())
 			steps = append(steps, step)
 			return steps
 		} else {
+			step.Credential = credentialSource(credential)
 			step.Status = "success"
 			step.Message = strings.TrimSpace(output)
 		}
@@ -177,6 +213,22 @@ func (d Deployer) runTarget(ctx context.Context, model *ir.Model, projectID stri
 		}
 		steps = append(steps, step)
 	}
+	cleanup := Step{TargetID: target.ID, TargetName: target.Name, Engine: target.Engine, Stage: "cleanup", Command: cleanupCommand(remoteTmp), Batch: batch}
+	if dryRun {
+		cleanup.Status = "skipped"
+		cleanup.Message = "dry run"
+	} else if output, runErr := d.Runner(ctx, target, credential, cleanup.Command, ""); runErr != nil {
+		cleanup.Credential = credentialSource(credential)
+		cleanup.Status = "failed"
+		cleanup.Message = strings.TrimSpace(output + "\n" + runErr.Error())
+		steps = append(steps, cleanup)
+		return steps
+	} else {
+		cleanup.Credential = credentialSource(credential)
+		cleanup.Status = "success"
+		cleanup.Message = strings.TrimSpace(output)
+	}
+	steps = append(steps, cleanup)
 	return steps
 }
 
@@ -216,7 +268,7 @@ func selectTargets(file store.TargetsFile, req Request) ([]store.Target, int, bo
 }
 
 func uploadCommand(target store.Target, remoteTmp string) string {
-	return fmt.Sprintf("ssh -p %d %s@%s 'cat > %s'", target.Port, target.User, target.Host, shellQuote(remoteTmp))
+	return "cat > " + shellQuote(remoteTmp)
 }
 
 func remoteValidateCommand(target store.Target, remoteTmp string) string {
@@ -235,6 +287,10 @@ func reloadCommand(target store.Target) string {
 	return sudoCommand(target, target.ReloadCommand)
 }
 
+func cleanupCommand(remoteTmp string) string {
+	return "rm -f " + shellQuote(remoteTmp)
+}
+
 func sudoCommand(target store.Target, command string) string {
 	if !target.Sudo {
 		return command
@@ -246,8 +302,20 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 }
 
-func sshRunner(ctx context.Context, target store.Target, command string, input string) (string, error) {
-	args := []string{"-p", fmt.Sprint(target.Port), target.User + "@" + target.Host, command}
+func sshRunner(ctx context.Context, target store.Target, credential secrets.Secret, command string, input string) (string, error) {
+	if credential.Username != "" {
+		target.User = credential.Username
+	}
+	keyPath, cleanup, err := privateKeyFile(credential)
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+	args := []string{}
+	if keyPath != "" {
+		args = append(args, "-i", keyPath, "-o", "IdentitiesOnly=yes")
+	}
+	args = append(args, "-p", fmt.Sprint(target.Port), target.User+"@"+target.Host, command)
 	cmd := exec.CommandContext(ctx, "ssh", args...)
 	if input != "" {
 		cmd.Stdin = strings.NewReader(input)
@@ -255,8 +323,27 @@ func sshRunner(ctx context.Context, target store.Target, command string, input s
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
-	err := cmd.Run()
+	err = cmd.Run()
 	return output.String(), err
+}
+
+func privateKeyFile(credential secrets.Secret) (string, func(), error) {
+	if credential.PrivateKey == "" {
+		return "", func() {}, nil
+	}
+	path, err := createTempKeyFile()
+	if err != nil {
+		return "", nil, err
+	}
+	if err := writeKeyFile(path, []byte(credential.PrivateKey), 0o600); err != nil {
+		_ = removeKeyFile(path)
+		return "", nil, err
+	}
+	if err := chmodKeyFile(path, 0o600); err != nil {
+		_ = removeKeyFile(path)
+		return "", nil, err
+	}
+	return path, func() { _ = removeKeyFile(path) }, nil
 }
 
 func httpProbe(ctx context.Context, url string) error {
@@ -327,4 +414,36 @@ func hasFailed(steps []Step) bool {
 		}
 	}
 	return false
+}
+
+func credentialSource(credential secrets.Secret) string {
+	if credential.Username != "" || credential.PrivateKey != "" || credential.Password != "" || credential.Passphrase != "" || credential.Token != "" {
+		return "vault"
+	}
+	return "local_ssh"
+}
+
+func CredentialSources(steps []Step) []string {
+	seen := map[string]bool{}
+	sources := []string{}
+	for _, step := range steps {
+		if step.Credential == "" || seen[step.Credential] {
+			continue
+		}
+		seen[step.Credential] = true
+		sources = append(sources, step.Credential)
+	}
+	return sources
+}
+
+func credentialFailureStep(target store.Target, batch int, err error) Step {
+	return Step{
+		TargetID:   target.ID,
+		TargetName: target.Name,
+		Engine:     target.Engine,
+		Stage:      "credentials",
+		Status:     "failed",
+		Message:    err.Error(),
+		Batch:      batch,
+	}
 }

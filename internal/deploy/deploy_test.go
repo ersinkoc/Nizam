@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mizanproxy/mizan/internal/ir"
+	"github.com/mizanproxy/mizan/internal/secrets"
 	"github.com/mizanproxy/mizan/internal/store"
 )
 
@@ -36,18 +37,21 @@ func TestRunDryTargetAndCluster(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Status != "success" || !result.DryRun || result.StartedAt != now.Format(time.RFC3339) || len(result.Steps) != 6 {
+	if result.Status != "success" || !result.DryRun || result.StartedAt != now.Format(time.RFC3339) || len(result.Steps) != 7 {
 		t.Fatalf("unexpected target deploy result: %+v", result)
 	}
 	if result.Steps[1].Status != "skipped" || result.Steps[1].Message != "dry run" {
 		t.Fatalf("expected skipped upload step: %+v", result.Steps[1])
+	}
+	if result.Steps[len(result.Steps)-1].Stage != "cleanup" || result.Steps[len(result.Steps)-1].Status != "skipped" {
+		t.Fatalf("expected skipped cleanup step: %+v", result.Steps[len(result.Steps)-1])
 	}
 
 	result, err = deployer.Run(t.Context(), st, Request{ProjectID: meta.ID, ClusterID: cluster.ID, DryRun: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ClusterID != cluster.ID || len(result.Steps) != 6 || result.Steps[0].Batch != 1 {
+	if result.ClusterID != cluster.ID || len(result.Steps) != 7 || result.Steps[0].Batch != 1 {
 		t.Fatalf("unexpected cluster deploy result: %+v", result)
 	}
 }
@@ -72,8 +76,11 @@ func TestRunExecutesAndHandlesFailures(t *testing.T) {
 	}
 	var ran []string
 	deployer := Deployer{
-		Runner: func(_ context.Context, target store.Target, command string, input string) (string, error) {
+		Runner: func(_ context.Context, target store.Target, credential secrets.Secret, command string, input string) (string, error) {
 			ran = append(ran, target.Name+":"+command)
+			if credential.Username != "" {
+				ran[len(ran)-1] += ":" + credential.Username
+			}
 			if target.ID == first.ID && strings.Contains(command, "reload") {
 				return "reload failed", errors.New("exit 1")
 			}
@@ -83,6 +90,9 @@ func TestRunExecutesAndHandlesFailures(t *testing.T) {
 			return "ok", nil
 		},
 		Prober: func(context.Context, string) error { return nil },
+		Credentials: func(_ context.Context, target store.Target) (secrets.Secret, error) {
+			return secrets.Secret{Username: "vault-" + target.Name}, nil
+		},
 	}
 	result, err := deployer.Run(t.Context(), st, Request{ProjectID: meta.ID, ClusterID: cluster.ID})
 	if err != nil {
@@ -91,7 +101,7 @@ func TestRunExecutesAndHandlesFailures(t *testing.T) {
 	if result.Status != "failed" || len(result.Steps) < 9 {
 		t.Fatalf("expected failed result that continues to second target: %+v", result)
 	}
-	if len(ran) < 8 || !strings.Contains(result.Steps[len(result.Steps)-2].Command, "sudo sh -lc") {
+	if len(ran) < 8 || !strings.Contains(strings.Join(ran, "\n"), "vault-second") || result.Steps[1].Credential != "vault" || !strings.Contains(result.Steps[len(result.Steps)-2].Command, "sudo sh -lc") {
 		t.Fatalf("runner commands not recorded as expected: steps=%+v ran=%v", result.Steps, ran)
 	}
 
@@ -106,6 +116,30 @@ func TestRunExecutesAndHandlesFailures(t *testing.T) {
 	}
 	if result.Status != "failed" || strings.Contains(strings.Join(ran, "\n"), "second:") {
 		t.Fatalf("expected gated deployment to stop after first failure: %+v ran=%v", result, ran)
+	}
+
+	deployer.Credentials = func(context.Context, store.Target) (secrets.Secret, error) {
+		return secrets.Secret{}, errors.New("vault failed")
+	}
+	result, err = deployer.Run(t.Context(), st, Request{ProjectID: meta.ID, TargetID: first.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "failed" || len(result.Steps) != 1 || result.Steps[0].Stage != "credentials" {
+		t.Fatalf("expected credential failure step: %+v", result)
+	}
+	deployer.Credentials = func(_ context.Context, target store.Target) (secrets.Secret, error) {
+		if target.ID == first.ID {
+			return secrets.Secret{}, errors.New("vault failed")
+		}
+		return secrets.Secret{}, nil
+	}
+	result, err = deployer.Run(t.Context(), st, Request{ProjectID: meta.ID, ClusterID: cluster.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "failed" || len(result.Steps) <= 1 || result.Steps[0].Stage != "credentials" {
+		t.Fatalf("expected credential failure to continue in ungated cluster: %+v", result)
 	}
 }
 
@@ -179,7 +213,7 @@ func TestNewAndDefaultClock(t *testing.T) {
 
 func TestRunTargetErrorAndProbeBranches(t *testing.T) {
 	deployer := Deployer{
-		Runner: func(context.Context, store.Target, string, string) (string, error) {
+		Runner: func(context.Context, store.Target, secrets.Secret, string, string) (string, error) {
 			return "ok", nil
 		},
 		Prober: func(context.Context, string) error {
@@ -187,24 +221,44 @@ func TestRunTargetErrorAndProbeBranches(t *testing.T) {
 		},
 	}
 	model := ir.EmptyModel("p_1", "edge", "", []ir.Engine{ir.EngineHAProxy})
-	steps := deployer.runTarget(t.Context(), model, "p_1", store.Target{ID: "t_1", Name: "bad", Engine: ir.Engine("bad")}, 1, false)
+	steps := deployer.runTarget(t.Context(), model, "p_1", store.Target{ID: "t_1", Name: "bad", Engine: ir.Engine("bad")}, secrets.Secret{}, 1, false)
 	if len(steps) != 1 || steps[0].Status != "failed" || steps[0].Message == "" {
 		t.Fatalf("expected generation failure: %+v", steps)
 	}
-	steps = deployer.runTarget(t.Context(), model, "p_1", store.Target{ID: "t_1", Name: "edge", Engine: ir.EngineHAProxy, Host: "host", Port: 22, User: "root", ConfigPath: "/etc/haproxy/haproxy.cfg", ReloadCommand: "reload", PostReloadProbe: "https://edge.example.com/healthz"}, 1, false)
-	if !hasFailed(steps) || steps[len(steps)-1].Stage != "probe" {
+	steps = deployer.runTarget(t.Context(), model, "p_1", store.Target{ID: "t_1", Name: "edge", Engine: ir.EngineHAProxy, Host: "host", Port: 22, User: "root", ConfigPath: "/etc/haproxy/haproxy.cfg", ReloadCommand: "reload", PostReloadProbe: "https://edge.example.com/healthz"}, secrets.Secret{}, 1, false)
+	if !hasFailed(steps) || steps[1].Credential != "local_ssh" || steps[len(steps)-1].Stage != "probe" {
 		t.Fatalf("expected probe failure: %+v", steps)
 	}
 	deployer.Prober = func(context.Context, string) error { return nil }
-	steps = deployer.runTarget(t.Context(), model, "p_1", store.Target{ID: "t_1", Name: "edge", Engine: ir.EngineHAProxy, Host: "host", Port: 22, User: "root", ConfigPath: "/etc/haproxy/haproxy.cfg", ReloadCommand: "reload", PostReloadProbe: "https://edge.example.com/healthz"}, 1, false)
+	steps = deployer.runTarget(t.Context(), model, "p_1", store.Target{ID: "t_1", Name: "edge", Engine: ir.EngineHAProxy, Host: "host", Port: 22, User: "root", ConfigPath: "/etc/haproxy/haproxy.cfg", ReloadCommand: "reload", PostReloadProbe: "https://edge.example.com/healthz"}, secrets.Secret{}, 1, false)
 	if hasFailed(steps) || steps[len(steps)-1].Status != "success" {
 		t.Fatalf("expected successful probe: %+v", steps)
+	}
+	if steps[len(steps)-1].Stage != "cleanup" || steps[len(steps)-1].Credential != "local_ssh" {
+		t.Fatalf("expected cleanup success step: %+v", steps)
+	}
+}
+
+func TestRunTargetCleanupFailure(t *testing.T) {
+	deployer := Deployer{
+		Runner: func(_ context.Context, _ store.Target, _ secrets.Secret, command string, _ string) (string, error) {
+			if strings.HasPrefix(command, "rm -f ") {
+				return "cleanup failed", errors.New("exit 1")
+			}
+			return "ok", nil
+		},
+		Prober: func(context.Context, string) error { return nil },
+	}
+	model := ir.EmptyModel("p_1", "edge", "", []ir.Engine{ir.EngineHAProxy})
+	steps := deployer.runTarget(t.Context(), model, "p_1", store.Target{ID: "t_1", Name: "edge", Engine: ir.EngineHAProxy, Host: "host", Port: 22, User: "root", ConfigPath: "/etc/haproxy/haproxy.cfg", ReloadCommand: "reload"}, secrets.Secret{}, 1, false)
+	if !hasFailed(steps) || steps[len(steps)-1].Stage != "cleanup" || steps[len(steps)-1].Message == "" {
+		t.Fatalf("expected cleanup failure: %+v", steps)
 	}
 }
 
 func TestCommandsAndHelpers(t *testing.T) {
 	target := store.Target{Host: "edge.example.com", Port: 2222, User: "deployer", Engine: ir.EngineNginx, ConfigPath: "/etc/nginx/nginx.conf", ReloadCommand: "systemctl reload nginx", Sudo: true}
-	if got := uploadCommand(target, "/tmp/it's.cfg"); !strings.Contains(got, "ssh -p 2222 deployer@edge.example.com") || !strings.Contains(got, "'\"'\"'") {
+	if got := uploadCommand(target, "/tmp/it's.cfg"); !strings.HasPrefix(got, "cat > ") || !strings.Contains(got, "'\"'\"'") {
 		t.Fatalf("unexpected upload command: %s", got)
 	}
 	if got := remoteValidateCommand(target, "/tmp/nginx.conf"); got != "nginx -t -c '/tmp/nginx.conf'" {
@@ -216,6 +270,9 @@ func TestCommandsAndHelpers(t *testing.T) {
 	if got := installCommand(target, "/tmp/nginx.conf"); !strings.HasPrefix(got, "sudo sh -lc ") {
 		t.Fatalf("expected sudo install command: %s", got)
 	}
+	if got := cleanupCommand("/tmp/it's.cfg"); got != "rm -f '/tmp/it'\"'\"'s.cfg'" {
+		t.Fatalf("unexpected cleanup command: %s", got)
+	}
 	if stepStatus(errors.New("bad"), true) != "failed" || stepStatus(nil, true) != "success" || stepStatus(nil, false) != "success" {
 		t.Fatal("unexpected step status")
 	}
@@ -224,6 +281,10 @@ func TestCommandsAndHelpers(t *testing.T) {
 	}
 	if hasFailed([]Step{{Status: "success"}}) || !hasFailed([]Step{{Status: "failed"}}) {
 		t.Fatal("unexpected hasFailed")
+	}
+	sources := CredentialSources([]Step{{Credential: ""}, {Credential: "vault"}, {Credential: "vault"}, {Credential: "local_ssh"}})
+	if strings.Join(sources, ",") != "vault,local_ssh" {
+		t.Fatalf("unexpected credential sources: %v", sources)
 	}
 }
 
@@ -243,9 +304,59 @@ func TestSSHRunnerWithFakeSSH(t *testing.T) {
 	if err := os.Setenv("PATH", dir+string(os.PathListSeparator)+oldPath); err != nil {
 		t.Fatal(err)
 	}
-	out, err := sshRunner(t.Context(), store.Target{Host: "host", Port: 22, User: "root"}, "echo ok", "config")
+	out, err := sshRunner(t.Context(), store.Target{Host: "host", Port: 22, User: "root"}, secrets.Secret{}, "echo ok", "config")
 	if err != nil || !strings.Contains(out, "fake-ssh") {
 		t.Fatalf("unexpected fake ssh result out=%q err=%v", out, err)
+	}
+	out, err = sshRunner(t.Context(), store.Target{Host: "host", Port: 2222, User: "deploy"}, secrets.Secret{}, uploadCommand(store.Target{}, "/tmp/mizan.cfg"), "generated config")
+	if err != nil || !strings.Contains(out, "fake-ssh") || (runtime.GOOS != "windows" && (!strings.Contains(out, "cat >") || strings.Contains(out, "ssh -p 2222 deploy@host ssh"))) {
+		t.Fatalf("unexpected fake upload out=%q err=%v", out, err)
+	}
+	out, err = sshRunner(t.Context(), store.Target{Host: "host", Port: 22, User: "root"}, secrets.Secret{Username: "vault", PrivateKey: "PRIVATE KEY"}, "echo ok", "")
+	if err != nil || !strings.Contains(out, "fake-ssh") || !strings.Contains(out, "vault@host") {
+		t.Fatalf("unexpected credential ssh result out=%q err=%v", out, err)
+	}
+}
+
+func TestPrivateKeyFileErrors(t *testing.T) {
+	oldCreate, oldWrite, oldChmod, oldRemove := createTempKeyFile, writeKeyFile, chmodKeyFile, removeKeyFile
+	t.Cleanup(func() {
+		createTempKeyFile, writeKeyFile, chmodKeyFile, removeKeyFile = oldCreate, oldWrite, oldChmod, oldRemove
+	})
+	credential := secrets.Secret{PrivateKey: "PRIVATE KEY"}
+	createTempKeyFile = func() (string, error) { return "", errors.New("create failed") }
+	if _, _, err := privateKeyFile(credential); err == nil || err.Error() != "create failed" {
+		t.Fatalf("expected create error, got %v", err)
+	}
+	createTempKeyFile = oldCreate
+	path := filepath.Join(t.TempDir(), "key")
+	createTempKeyFile = func() (string, error) { return path, nil }
+	writeKeyFile = func(string, []byte, os.FileMode) error { return errors.New("write failed") }
+	if _, _, err := privateKeyFile(credential); err == nil || err.Error() != "write failed" {
+		t.Fatalf("expected write error, got %v", err)
+	}
+	writeKeyFile = oldWrite
+	chmodKeyFile = func(string, os.FileMode) error { return errors.New("chmod failed") }
+	if _, _, err := privateKeyFile(credential); err == nil || err.Error() != "chmod failed" {
+		t.Fatalf("expected chmod error, got %v", err)
+	}
+	createTempKeyFile = func() (string, error) { return "", errors.New("create failed") }
+	if out, err := sshRunner(t.Context(), store.Target{Host: "host", Port: 22, User: "root"}, credential, "echo ok", ""); err == nil || out != "" {
+		t.Fatalf("expected ssh runner key error out=%q err=%v", out, err)
+	}
+}
+
+func TestDefaultCreateTempKeyFileError(t *testing.T) {
+	badTemp := filepath.Join(t.TempDir(), "temp-file")
+	if err := os.WriteFile(badTemp, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMPDIR", badTemp)
+	t.Setenv("TMP", badTemp)
+	t.Setenv("TEMP", badTemp)
+	t.Setenv("USERPROFILE", badTemp)
+	if _, err := createTempKeyFile(); err == nil {
+		t.Fatal("expected temp key creation error")
 	}
 }
 

@@ -25,7 +25,7 @@ flowchart LR
   HAProxyMonitor["HAProxy Monitor\nshow stat CSV parser\nhealth summary"]:::done
   NginxMonitor["Nginx Monitor\nstub_status parser\nconnection summary"]:::done
   MonitorStream["Monitor Stream\nSSE snapshot events\ninterval + limit controls"]:::done
-  Deploy["SSH Deploy\nNot implemented yet"]:::todo
+  Deploy["SSH Deploy\nCLI --execute\nvault username/key"]:::done
   ProjectStream["Non-audit Project Streams\nNot implemented yet"]:::todo
 
   Foundation --> Auth
@@ -319,7 +319,7 @@ sequenceDiagram
   API-->>Browser: dry-run plan
 ```
 
-The deploy package now computes the concrete rollout steps for one target or a cluster: upload generated config, remote validate, install, reload, and optional post-reload probe. The WebUI currently invokes this as a dry run. The same backend path has command-runner and probe hooks for future real SSH execution.
+The deploy package computes the rollout steps for one target or a cluster: upload generated config, remote validate, install, reload, optional post-reload probe, and remote temp-file cleanup. The WebUI currently invokes this as a dry run. The CLI defaults to dry-run planning and can run the same path with `--execute`, using the local `ssh` command to execute each remote step.
 
 Target probe checks reuse the same HTTP probe helper without running SSH or deployment steps. `POST /api/v1/projects/{id}/targets/{targetID}/probe` tests a target's `post_reload_probe` URL, falling back to `monitor_endpoint`, and records a `target.probe` audit event.
 
@@ -341,7 +341,7 @@ mizan cluster add --project <id> --name prod --target-ids <target-id>
 mizan cluster list --project <id>
 ```
 
-CLI deploy defaults to dry-run planning. Passing `--execute` switches to the real command runner.
+CLI deploy defaults to dry-run planning. Passing `--execute` switches to the real command runner. If `--vault-passphrase` or `MIZAN_VAULT_PASSPHRASE` is available, deploy looks up a secret with the target id and applies its username and private key to the local `ssh` invocation. Deployment steps and audit metadata report only credential source names (`vault` or `local_ssh`), never secret values. Password and passphrase automation still depends on the local SSH environment, such as an agent or existing SSH config.
 
 ## Monitor Snapshot
 
@@ -661,23 +661,21 @@ mindmap
 
 ```mermaid
 flowchart LR
-  SSH["SSH deployment"]
-  Rollout["Cluster rollout orchestration"]
-  Secrets["Encrypted secrets vault"]
+  Credentials["Password/passphrase automation"]
+  Rollout["Advanced rollout orchestration"]
   ProjectStream["Project SSE streams"]
   SSE["SSE project/monitor streams"]
   FullParser["Full round-trip parsers"]
   Wizard["Full wizard UI"]
   DiffUI["Rich snapshot diff UI"]
 
-  SSH --> Rollout
-  Secrets --> SSH
+  Credentials --> Rollout
   ProjectStream --> SSE
   FullParser --> Wizard
   DiffUI --> Wizard
 ```
 
-The codebase is now a working product foundation, not yet a full v1 implementation. Target and cluster persistence plus dry-run deployment planning exist, HAProxy/Nginx monitor snapshots can be collected from HTTP endpoints, and monitor snapshots can be streamed over SSE. Real SSH execution, credential handling, staged rollout safety gates, project event streams, full parser round-trip, richer wizard editing, and deeper diff UI are still future work.
+The codebase is now a working product foundation, not yet a full v1 implementation. Target and cluster persistence plus dry-run deployment planning exist, CLI deployments can execute over the local `ssh` command with vault-backed username/private key credentials, HAProxy/Nginx monitor snapshots can be collected from HTTP endpoints, and monitor snapshots can be streamed over SSE. Password/passphrase automation, staged rollout safety gates, non-audit project event streams, full parser round-trip, richer wizard editing, and deeper diff UI are still future work.
 
 ## Design Principles
 

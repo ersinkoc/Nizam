@@ -566,6 +566,7 @@ func deployCmd(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	targetID := fs.String("target-id", "", "deployment target id")
 	clusterID := fs.String("cluster-id", "", "deployment cluster id")
 	execute := fs.Bool("execute", false, "execute remote SSH commands instead of dry-run planning")
+	vaultPassphrase := fs.String("vault-passphrase", "", "vault passphrase for target credentials")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -576,7 +577,11 @@ func deployCmd(ctx context.Context, args []string, stdout, stderr io.Writer) err
 		return errors.New("exactly one of --target-id or --cluster-id is required")
 	}
 	st := store.New(*home)
-	result, err := deploy.New().Run(ctx, st, deploy.Request{
+	deployer := deploy.New()
+	if *execute {
+		deployer.Credentials = deployCredentialProvider(*home, vaultPassphraseBytes(*vaultPassphrase))
+	}
+	result, err := deployer.Run(ctx, st, deploy.Request{
 		ProjectID: *projectID,
 		TargetID:  *targetID,
 		ClusterID: *clusterID,
@@ -592,13 +597,28 @@ func deployCmd(ctx context.Context, args []string, stdout, stderr io.Writer) err
 		IRSnapshotHash: result.SnapshotHash,
 		Outcome:        result.Status,
 		Metadata: map[string]any{
-			"dry_run":    result.DryRun,
-			"target_id":  result.TargetID,
-			"cluster_id": result.ClusterID,
-			"steps":      len(result.Steps),
+			"dry_run":     result.DryRun,
+			"target_id":   result.TargetID,
+			"cluster_id":  result.ClusterID,
+			"steps":       len(result.Steps),
+			"credentials": deploy.CredentialSources(result.Steps),
 		},
 	})
 	return json.NewEncoder(stdout).Encode(result)
+}
+
+func deployCredentialProvider(home string, passphrase []byte) deploy.CredentialProvider {
+	if len(passphrase) == 0 {
+		return nil
+	}
+	vault := secrets.New(secretsRoot(home))
+	return func(ctx context.Context, target store.Target) (secrets.Secret, error) {
+		secret, err := vault.Get(ctx, target.ID, passphrase)
+		if errors.Is(err, os.ErrNotExist) {
+			return secrets.Secret{}, nil
+		}
+		return secret, err
+	}
 }
 
 func monitorCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error {
