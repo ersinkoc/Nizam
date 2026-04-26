@@ -100,7 +100,8 @@ export const api = {
     request<DeployResult>(`/api/v1/projects/${projectID}/deploy`, {
       method: 'POST',
       body: JSON.stringify(body)
-    }),
+  }),
   monitorSnapshot: (projectID: string) => request<MonitorSnapshot>(`/api/v1/projects/${projectID}/monitor/snapshot`),
-  monitorStreamURL: (projectID: string) => `/api/v1/projects/${projectID}/monitor/stream`
+  monitorStreamURL: (projectID: string) => `/api/v1/projects/${projectID}/monitor/stream`,
+  projectEventsURL: (projectID: string) => `/api/v1/projects/${projectID}/events`
 };

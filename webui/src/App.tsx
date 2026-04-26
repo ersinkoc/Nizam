@@ -120,6 +120,7 @@ export function App() {
   const [deployResult, setDeployResult] = useState<DeployResult | null>(null);
   const [monitorSnapshot, setMonitorSnapshot] = useState<MonitorSnapshot | null>(null);
   const [monitorStream, setMonitorStream] = useState<'idle' | 'connecting' | 'live' | 'error'>('idle');
+  const [auditStream, setAuditStream] = useState<'idle' | 'connecting' | 'live' | 'error'>('idle');
   const [target, setTarget] = useState<Engine>('haproxy');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -139,6 +140,7 @@ export function App() {
     setGenerated(null);
     setValidation(null);
     setDiffChanges([]);
+    setAudit([]);
     setTargetsFile({ targets: [], clusters: [] });
     setDeployResult(null);
     setMonitorSnapshot(null);
@@ -175,6 +177,30 @@ export function App() {
     source.onerror = () => setMonitorStream('error');
     return () => {
       source.removeEventListener('snapshot', onSnapshot);
+      source.close();
+    };
+  }, [active?.id]);
+
+  useEffect(() => {
+    if (!active || typeof EventSource === 'undefined') {
+      setAuditStream('idle');
+      return;
+    }
+    setAuditStream('connecting');
+    const source = new EventSource(api.projectEventsURL(active.id));
+    const onAudit = (event: Event) => {
+      try {
+        const item = JSON.parse((event as MessageEvent<string>).data) as AuditEvent;
+        setAudit((items) => [item, ...items.filter((existing) => existing.event_id !== item.event_id)].slice(0, 50));
+        setAuditStream('live');
+      } catch (err) {
+        setAuditStream('error');
+      }
+    };
+    source.addEventListener('audit', onAudit);
+    source.onerror = () => setAuditStream('error');
+    return () => {
+      source.removeEventListener('audit', onAudit);
       source.close();
     };
   }, [active?.id]);
@@ -748,9 +774,12 @@ export function App() {
         <section className="panel audit-panel">
           <div className="panel-head">
             <h2><BookOpenText size={16} /> Audit</h2>
-            <button disabled={!active || busy} onClick={() => reloadAudit()}>
-              <RefreshCw size={16} /> Refresh
-            </button>
+            <div className="panel-actions">
+              <StreamStatus value={auditStream} />
+              <button disabled={!active || busy} onClick={() => reloadAudit()}>
+                <RefreshCw size={16} /> Refresh
+              </button>
+            </div>
           </div>
           <AuditList events={audit} />
         </section>
@@ -822,6 +851,16 @@ function DeployPlan({ result }: { result: DeployResult | null }) {
   );
 }
 
+function StreamStatus({ value, label }: { value: 'idle' | 'connecting' | 'live' | 'error'; label?: string }) {
+  const text = label ?? (value === 'live' ? 'Live' : value === 'connecting' ? 'Connecting' : value === 'error' ? 'Reconnecting' : 'Manual');
+  return (
+    <div className={`stream-status ${value}`}>
+      <span aria-hidden="true" />
+      <small>{text}</small>
+    </div>
+  );
+}
+
 function MonitorPanel({ snapshot, stream }: { snapshot: MonitorSnapshot | null; stream: 'idle' | 'connecting' | 'live' | 'error' }) {
   if (!snapshot) {
     return <div className="monitor-empty">No monitor snapshot loaded.</div>;
@@ -829,10 +868,7 @@ function MonitorPanel({ snapshot, stream }: { snapshot: MonitorSnapshot | null; 
   const streamLabel = stream === 'live' ? 'Live' : stream === 'connecting' ? 'Connecting' : stream === 'error' ? 'Reconnecting' : 'Manual';
   return (
     <div className="monitor-body">
-      <div className={`monitor-stream ${stream}`}>
-        <span aria-hidden="true" />
-        <small>{streamLabel}</small>
-      </div>
+      <StreamStatus value={stream} label={streamLabel} />
       <div className="monitor-summary">
         <Metric icon={<Server />} label="Targets" value={snapshot.summary.total_targets} />
         <Metric icon={<CheckCircle2 />} label="Healthy" value={snapshot.summary.healthy} />

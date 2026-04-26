@@ -13,6 +13,7 @@ flowchart LR
   Validate["Validate\nStructural + native binary wrapper"]:::done
   Topology["Topology\nReact Flow graph\nDrag/connect updates IR"]:::done
   Audit["Audit\nAppend-only audit.jsonl\nWebUI panel"]:::done
+  AuditStream["Audit Stream\nSSE audit events\nWebUI live panel"]:::done
   Targets["Target Registry\nTargets + clusters\nWebUI panel"]:::done
   DeployPlan["Deploy Plan\nDry-run rollout steps\nAudit event"]:::done
   MonitorBase["Monitor Snapshot\nTarget health contract\nAPI + CLI + WebUI"]:::done
@@ -20,11 +21,12 @@ flowchart LR
   NginxMonitor["Nginx Monitor\nstub_status parser\nconnection summary"]:::done
   MonitorStream["Monitor Stream\nSSE snapshot events\ninterval + limit controls"]:::done
   Deploy["SSH Deploy\nNot implemented yet"]:::todo
-  ProjectStream["Project Event Streams\nNot implemented yet"]:::todo
+  ProjectStream["Non-audit Project Streams\nNot implemented yet"]:::todo
 
   Foundation --> IR --> Import --> Generate --> Validate
   IR --> Topology
   IR --> Audit
+  Audit --> AuditStream
   Audit --> Targets
   Targets --> DeployPlan
   DeployPlan --> Deploy
@@ -35,6 +37,7 @@ flowchart LR
   HAProxyMonitor --> MonitorStream
   NginxMonitor --> MonitorStream
   MonitorStream --> ProjectStream
+  AuditStream --> ProjectStream
 
   classDef done fill:#dff7ea,stroke:#2b8a57,color:#153b27;
   classDef todo fill:#fff3cd,stroke:#a36b00,color:#4a3100;
@@ -423,11 +426,14 @@ sequenceDiagram
   participant Snapshot as snapshots/
   participant Tags as snapshot-tags.json
   participant Audit as audit.jsonl
+  participant EventStream as GET /events
 
   API->>Store: SaveIR()
   Store->>Store: write config.json
   Store->>Snapshot: write timestamp-hash.json
   API->>Audit: append ir.patch
+  EventStream->>Audit: poll recent events
+  EventStream-->>API: SSE audit event
 
   API->>Store: TagSnapshot(ref, label)
   Store->>Tags: upsert label -> ref
@@ -451,6 +457,7 @@ flowchart LR
   Snapshots["Snapshots panel"]
   Targets["Targets / clusters panel"]
   Audit["Audit panel"]
+  EventStream["Project event stream"]
 
   APIClient --> App
   App --> IRDraft
@@ -459,6 +466,8 @@ flowchart LR
   App --> Snapshots
   App --> Targets
   App --> Audit
+  APIClient --> EventStream
+  EventStream --> Audit
   Topology -->|move/connect| App
   IRDraft -->|Save| APIClient
   GeneratePanel -->|Generate/Validate| APIClient
@@ -545,6 +554,7 @@ mindmap
       snapshots
       tags
       audit.jsonl
+      audit SSE stream
       targets.json
     Deployment
       dry-run plan
@@ -582,7 +592,7 @@ mindmap
       clusters
       deploy preview
       monitor
-      audit
+      live audit
     CLI
       serve
       project

@@ -291,6 +291,12 @@ textarea {
   font-size: 16px;
 }
 
+.panel-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .editor textarea {
   border: 0;
   border-radius: 0;
@@ -867,7 +873,7 @@ textarea {
   gap: 12px;
 }
 
-.monitor-stream {
+.stream-status {
   display: inline-flex;
   width: fit-content;
   align-items: center;
@@ -875,22 +881,22 @@ textarea {
   color: var(--muted);
 }
 
-.monitor-stream span {
+.stream-status span {
   width: 9px;
   height: 9px;
   border-radius: 999px;
   background: var(--muted);
 }
 
-.monitor-stream.live span {
+.stream-status.live span {
   background: var(--accent);
 }
 
-.monitor-stream.connecting span {
+.stream-status.connecting span {
   background: var(--warn);
 }
 
-.monitor-stream.error span {
+.stream-status.error span {
   background: var(--danger);
 }
 

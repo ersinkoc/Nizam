@@ -60,6 +60,7 @@ func TestProjectLifecycleEndpoints(t *testing.T) {
 		{http.MethodGet, "/api/v1/projects/" + id + "/audit", http.StatusOK},
 		{http.MethodGet, "/api/v1/projects/" + id + "/monitor/snapshot", http.StatusOK},
 		{http.MethodGet, "/api/v1/projects/" + id + "/monitor/stream?limit=1", http.StatusOK},
+		{http.MethodGet, "/api/v1/projects/" + id + "/events?limit=1", http.StatusOK},
 	} {
 		res = doJSON(mux, tc.method, tc.path, nil)
 		if res.Code != tc.status {
@@ -160,6 +161,115 @@ func TestProjectLifecycleEndpoints(t *testing.T) {
 	res = doJSON(mux, http.MethodDelete, "/api/v1/projects/"+id, nil)
 	if res.Code != http.StatusNoContent {
 		t.Fatalf("delete status=%d body=%s", res.Code, res.Body.String())
+	}
+}
+
+func TestProjectEventsEndpoint(t *testing.T) {
+	st := store.New(t.TempDir())
+	mux := http.NewServeMux()
+	Register(mux, st)
+	res := doJSON(mux, http.MethodPost, "/api/v1/projects", map[string]any{"name": "edge", "engines": []string{"haproxy"}})
+	if res.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", res.Code, res.Body.String())
+	}
+	var created struct {
+		Project struct {
+			ID string `json:"id"`
+		} `json:"project"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	res = doJSON(mux, http.MethodGet, "/api/v1/projects/"+created.Project.ID+"/events?limit=1&interval=1ms", nil)
+	if res.Code != http.StatusOK {
+		t.Fatalf("events status=%d body=%s", res.Code, res.Body.String())
+	}
+	if !bytes.Contains(res.Body.Bytes(), []byte("event: audit")) || !bytes.Contains(res.Body.Bytes(), []byte("project.create")) {
+		t.Fatalf("events body=%s", res.Body.String())
+	}
+	if ct := res.Header().Get("Content-Type"); ct != "text/event-stream" {
+		t.Fatalf("content-type=%q", ct)
+	}
+}
+
+func TestProjectEventsBranches(t *testing.T) {
+	st := store.New(t.TempDir())
+	mux := http.NewServeMux()
+	Register(mux, st)
+	if res := doJSON(mux, http.MethodGet, "/api/v1/projects/missing/events", nil); res.Code != http.StatusNotFound {
+		t.Fatalf("missing events status=%d body=%s", res.Code, res.Body.String())
+	}
+	meta, _, _, err := st.CreateProject(t.Context(), "edge", "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &Handler{store: st}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+meta.ID+"/events", nil)
+	req.SetPathValue("id", meta.ID)
+	plain := &plainResponse{header: http.Header{}}
+	h.projectEvents(plain, req)
+	if plain.status != http.StatusInternalServerError || !bytes.Contains(plain.body.Bytes(), []byte("streaming is not supported")) {
+		t.Fatalf("plain response status=%d body=%s", plain.status, plain.body.String())
+	}
+
+	oldAuditEvents := auditEventsFromStore
+	t.Cleanup(func() { auditEventsFromStore = oldAuditEvents })
+	auditEventsFromStore = func(*store.Store, *http.Request, string, int) ([]store.AuditEvent, error) {
+		return nil, errors.New("audit failed")
+	}
+	res := doJSON(mux, http.MethodGet, "/api/v1/projects/"+meta.ID+"/events?limit=1", nil)
+	if res.Code != http.StatusOK || !bytes.Contains(res.Body.Bytes(), []byte("event: error")) {
+		t.Fatalf("events error status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	auditEventsFromStore = func(*store.Store, *http.Request, string, int) ([]store.AuditEvent, error) {
+		return []store.AuditEvent{{EventID: "e_1", ProjectID: meta.ID, Action: "test", Outcome: "success"}}, nil
+	}
+	firstWriteFailure := &flusherResponse{header: http.Header{}, failAt: 0}
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+meta.ID+"/events", nil)
+	req.SetPathValue("id", meta.ID)
+	h.projectEvents(firstWriteFailure, req)
+	if firstWriteFailure.body.Len() != 0 {
+		t.Fatalf("expected no stream body after write failure: %s", firstWriteFailure.body.String())
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+meta.ID+"/events?limit=bad&interval=bad", nil).WithContext(ctx)
+	req.SetPathValue("id", meta.ID)
+	canceled := &flusherResponse{header: http.Header{}, failAt: -1}
+	h.projectEvents(canceled, req)
+	if !bytes.Contains(canceled.body.Bytes(), []byte("event: audit")) {
+		t.Fatalf("expected initial audit before canceled context return: %s", canceled.body.String())
+	}
+
+	auditEventsFromStore = func(*store.Store, *http.Request, string, int) ([]store.AuditEvent, error) {
+		return []store.AuditEvent{
+			{EventID: "e_dup", ProjectID: meta.ID, Action: "duplicate", Outcome: "success"},
+			{EventID: "e_dup", ProjectID: meta.ID, Action: "duplicate", Outcome: "success"},
+		}, nil
+	}
+	ctx, cancel = context.WithCancel(context.Background())
+	cancel()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+meta.ID+"/events?limit=bad&interval=bad", nil).WithContext(ctx)
+	req.SetPathValue("id", meta.ID)
+	duplicate := &flusherResponse{header: http.Header{}, failAt: -1}
+	h.projectEvents(duplicate, req)
+	if got := strings.Count(duplicate.body.String(), "event: audit"); got != 1 {
+		t.Fatalf("expected duplicate audit event to emit once, got %d body=%s", got, duplicate.body.String())
+	}
+
+	calls := 0
+	auditEventsFromStore = func(*store.Store, *http.Request, string, int) ([]store.AuditEvent, error) {
+		calls++
+		if calls == 1 {
+			return nil, nil
+		}
+		return []store.AuditEvent{{EventID: "e_after_tick", ProjectID: meta.ID, Action: "later", Outcome: "success"}}, nil
+	}
+	res = doJSON(mux, http.MethodGet, "/api/v1/projects/"+meta.ID+"/events?limit=1&interval=1ms", nil)
+	if res.Code != http.StatusOK || !bytes.Contains(res.Body.Bytes(), []byte("e_after_tick")) {
+		t.Fatalf("events after tick status=%d body=%s", res.Code, res.Body.String())
 	}
 }
 
