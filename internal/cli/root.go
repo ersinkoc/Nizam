@@ -50,6 +50,10 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return project(ctx, args[1:], stdout, stderr)
 	case "snapshot":
 		return snapshot(ctx, args[1:], stdout, stderr)
+	case "target":
+		return targetCmd(ctx, args[1:], stdout, stderr)
+	case "cluster":
+		return clusterCmd(ctx, args[1:], stdout, stderr)
 	case "generate":
 		return generate(ctx, args[1:], stdout, stderr)
 	case "validate":
@@ -265,6 +269,148 @@ func snapshot(ctx context.Context, args []string, stdout, stderr io.Writer) erro
 	}
 }
 
+func targetCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	if len(args) == 0 {
+		_, _ = fmt.Fprintln(stderr, "usage: mizan target list|add|delete")
+		return errors.New("missing target command")
+	}
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("target list", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		home := fs.String("home", store.DefaultRoot(), "Mizan data directory")
+		projectID := fs.String("project", "", "project id")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *projectID == "" {
+			return errors.New("--project is required")
+		}
+		targets, err := store.New(*home).ListTargets(ctx, *projectID)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(stdout).Encode(targets.Targets)
+	case "add":
+		fs := flag.NewFlagSet("target add", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		home := fs.String("home", store.DefaultRoot(), "Mizan data directory")
+		projectID := fs.String("project", "", "project id")
+		id := fs.String("id", "", "existing target id for update")
+		name := fs.String("name", "", "target name")
+		host := fs.String("host", "", "target host")
+		port := fs.Int("port", 22, "SSH port")
+		user := fs.String("user", "root", "SSH user")
+		engine := fs.String("engine", "haproxy", "haproxy or nginx")
+		configPath := fs.String("config-path", "", "remote config path")
+		reloadCommand := fs.String("reload-command", "", "remote reload command")
+		sudo := fs.Bool("sudo", false, "run install/reload through sudo")
+		probe := fs.String("post-reload-probe", "", "optional HTTP probe URL")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *projectID == "" {
+			return errors.New("--project is required")
+		}
+		target, err := store.New(*home).UpsertTarget(ctx, *projectID, store.Target{
+			ID:              *id,
+			Name:            *name,
+			Host:            *host,
+			Port:            *port,
+			User:            *user,
+			Engine:          ir.Engine(*engine),
+			ConfigPath:      *configPath,
+			ReloadCommand:   *reloadCommand,
+			Sudo:            *sudo,
+			PostReloadProbe: *probe,
+		})
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(stdout).Encode(target)
+	case "delete":
+		fs := flag.NewFlagSet("target delete", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		home := fs.String("home", store.DefaultRoot(), "Mizan data directory")
+		projectID := fs.String("project", "", "project id")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *projectID == "" || fs.NArg() != 1 {
+			return errors.New("--project and target id are required")
+		}
+		return store.New(*home).DeleteTarget(ctx, *projectID, fs.Arg(0))
+	default:
+		return fmt.Errorf("unknown target command %q", args[0])
+	}
+}
+
+func clusterCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	if len(args) == 0 {
+		_, _ = fmt.Fprintln(stderr, "usage: mizan cluster list|add|delete")
+		return errors.New("missing cluster command")
+	}
+	switch args[0] {
+	case "list":
+		fs := flag.NewFlagSet("cluster list", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		home := fs.String("home", store.DefaultRoot(), "Mizan data directory")
+		projectID := fs.String("project", "", "project id")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *projectID == "" {
+			return errors.New("--project is required")
+		}
+		targets, err := store.New(*home).ListTargets(ctx, *projectID)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(stdout).Encode(targets.Clusters)
+	case "add":
+		fs := flag.NewFlagSet("cluster add", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		home := fs.String("home", store.DefaultRoot(), "Mizan data directory")
+		projectID := fs.String("project", "", "project id")
+		id := fs.String("id", "", "existing cluster id for update")
+		name := fs.String("name", "", "cluster name")
+		targetIDs := fs.String("target-ids", "", "comma-separated target ids")
+		parallelism := fs.Int("parallelism", 1, "deployment parallelism")
+		gate := fs.Bool("gate-on-failure", true, "stop rollout after the first failed target")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *projectID == "" {
+			return errors.New("--project is required")
+		}
+		cluster, err := store.New(*home).UpsertCluster(ctx, *projectID, store.Cluster{
+			ID:            *id,
+			Name:          *name,
+			TargetIDs:     splitCSV(*targetIDs),
+			Parallelism:   *parallelism,
+			GateOnFailure: *gate,
+		})
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(stdout).Encode(cluster)
+	case "delete":
+		fs := flag.NewFlagSet("cluster delete", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		home := fs.String("home", store.DefaultRoot(), "Mizan data directory")
+		projectID := fs.String("project", "", "project id")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *projectID == "" || fs.NArg() != 1 {
+			return errors.New("--project and cluster id are required")
+		}
+		return store.New(*home).DeleteCluster(ctx, *projectID, fs.Arg(0))
+	default:
+		return fmt.Errorf("unknown cluster command %q", args[0])
+	}
+}
+
 func generate(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("generate", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -361,7 +507,7 @@ func deployCmd(ctx context.Context, args []string, stdout, stderr io.Writer) err
 
 func parseEngines(v string) []ir.Engine {
 	var engines []ir.Engine
-	for _, part := range strings.Split(v, ",") {
+	for _, part := range splitCSV(v) {
 		switch strings.TrimSpace(part) {
 		case "nginx":
 			engines = append(engines, ir.EngineNginx)
@@ -370,6 +516,17 @@ func parseEngines(v string) []ir.Engine {
 		}
 	}
 	return engines
+}
+
+func splitCSV(v string) []string {
+	var items []string
+	for _, part := range strings.Split(v, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			items = append(items, part)
+		}
+	}
+	return items
 }
 
 func usage(w io.Writer) {
@@ -381,6 +538,8 @@ Usage:
   mizan project import ./haproxy.cfg --name imported-edge
   mizan project list
   mizan snapshot list --project <id>
+  mizan target add --project <id> --name edge-01 --host 10.0.0.10
+  mizan cluster add --project <id> --name prod --target-ids <target-id>
   mizan generate --project <id> --target haproxy [--out haproxy.cfg]
   mizan validate --project <id> --target nginx
   mizan deploy --project <id> --target-id <target-id>

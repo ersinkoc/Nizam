@@ -289,6 +289,15 @@ mizan deploy --project <id> --target-id <target-id>
 mizan deploy --project <id> --cluster-id <cluster-id>
 ```
 
+Targets and clusters can also be managed from the CLI:
+
+```sh
+mizan target add --project <id> --name edge-01 --host 10.0.0.10 --engine haproxy
+mizan target list --project <id>
+mizan cluster add --project <id> --name prod --target-ids <target-id>
+mizan cluster list --project <id>
+```
+
 CLI deploy defaults to dry-run planning. Passing `--execute` switches to the real command runner.
 
 ## Topology Editing
@@ -517,6 +526,8 @@ mindmap
       serve
       project
       snapshot
+      target
+      cluster
       generate
       validate
       deploy

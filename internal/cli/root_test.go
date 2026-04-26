@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mizanproxy/mizan/internal/ir"
 	"github.com/mizanproxy/mizan/internal/store"
 )
 
@@ -88,14 +87,49 @@ func TestProjectGenerateValidateAndSnapshotCommands(t *testing.T) {
 	if !bytes.Contains(stdout.Bytes(), []byte(`"target":"haproxy"`)) {
 		t.Fatalf("validate output unexpected: %s", stdout.String())
 	}
-	st := store.New(home)
-	target, err := st.UpsertTarget(context.Background(), created.Project.ID, store.Target{Name: "edge-01", Host: "lb1.example.com", Engine: ir.EngineHAProxy})
-	if err != nil {
+	stdout.Reset()
+	if err := Run(context.Background(), []string{"target", "add", "--home", home, "--project", created.Project.ID, "--name", "edge-01", "--host", "lb1.example.com", "--engine", "haproxy", "--sudo", "--post-reload-probe", "https://edge.example.com/healthz"}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}
-	cluster, err := st.UpsertCluster(context.Background(), created.Project.ID, store.Cluster{Name: "prod", TargetIDs: []string{target.ID}})
-	if err != nil {
+	var target store.Target
+	if err := json.Unmarshal(stdout.Bytes(), &target); err != nil {
 		t.Fatal(err)
+	}
+	stdout.Reset()
+	if err := Run(context.Background(), []string{"target", "add", "--home", home, "--project", created.Project.ID, "--id", target.ID, "--name", "edge-01b", "--host", "lb1.example.com", "--engine", "nginx", "--config-path", "/etc/nginx/nginx.conf", "--reload-command", "systemctl reload nginx"}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte("edge-01b")) {
+		t.Fatalf("target update output unexpected: %s", stdout.String())
+	}
+	stdout.Reset()
+	if err := Run(context.Background(), []string{"target", "list", "--home", home, "--project", created.Project.ID}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte("edge-01b")) {
+		t.Fatalf("target list output unexpected: %s", stdout.String())
+	}
+	stdout.Reset()
+	if err := Run(context.Background(), []string{"cluster", "add", "--home", home, "--project", created.Project.ID, "--name", "prod", "--target-ids", target.ID, "--parallelism", "2"}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	var cluster store.Cluster
+	if err := json.Unmarshal(stdout.Bytes(), &cluster); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	if err := Run(context.Background(), []string{"cluster", "add", "--home", home, "--project", created.Project.ID, "--id", cluster.ID, "--name", "prod-b", "--target-ids", target.ID, "--gate-on-failure=false"}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte("prod-b")) {
+		t.Fatalf("cluster update output unexpected: %s", stdout.String())
+	}
+	stdout.Reset()
+	if err := Run(context.Background(), []string{"cluster", "list", "--home", home, "--project", created.Project.ID}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte("prod-b")) {
+		t.Fatalf("cluster list output unexpected: %s", stdout.String())
 	}
 	stdout.Reset()
 	if err := Run(context.Background(), []string{"deploy", "--home", home, "--project", created.Project.ID, "--target-id", target.ID}, &stdout, &stderr); err != nil {
@@ -111,6 +145,7 @@ func TestProjectGenerateValidateAndSnapshotCommands(t *testing.T) {
 	if !bytes.Contains(stdout.Bytes(), []byte(`"cluster_id":"`+cluster.ID+`"`)) {
 		t.Fatalf("deploy cluster output unexpected: %s", stdout.String())
 	}
+	st := store.New(home)
 	events, err := st.ListAudit(context.Background(), created.Project.ID, 10)
 	if err != nil {
 		t.Fatal(err)
@@ -147,6 +182,14 @@ func TestProjectGenerateValidateAndSnapshotCommands(t *testing.T) {
 	}
 	if !bytes.Contains(stdout.Bytes(), []byte("release")) {
 		t.Fatalf("tags output unexpected: %s", stdout.String())
+	}
+	stdout.Reset()
+	if err := Run(context.Background(), []string{"cluster", "delete", "--home", home, "--project", created.Project.ID, cluster.ID}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	if err := Run(context.Background(), []string{"target", "delete", "--home", home, "--project", created.Project.ID, target.ID}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -231,6 +274,30 @@ func TestCLIErrorBranches(t *testing.T) {
 	expectErr("snapshot", "tags", "--home", home)
 	expectErr("snapshot", "unknown")
 
+	expectErr("target")
+	expectErr("target", "list", "--bad")
+	expectErr("target", "list", "--home", home)
+	expectErr("target", "list", "--home", rootFile, "--project", "p_1")
+	expectErr("target", "add", "--bad")
+	expectErr("target", "add", "--home", home)
+	expectErr("target", "add", "--home", rootFile, "--project", "p_1", "--name", "edge", "--host", "host")
+	expectErr("target", "delete", "--bad")
+	expectErr("target", "delete", "--home", home)
+	expectErr("target", "delete", "--home", home, "--project", "p_1", "missing")
+	expectErr("target", "unknown")
+
+	expectErr("cluster")
+	expectErr("cluster", "list", "--bad")
+	expectErr("cluster", "list", "--home", home)
+	expectErr("cluster", "list", "--home", rootFile, "--project", "p_1")
+	expectErr("cluster", "add", "--bad")
+	expectErr("cluster", "add", "--home", home)
+	expectErr("cluster", "add", "--home", rootFile, "--project", "p_1", "--name", "prod")
+	expectErr("cluster", "delete", "--bad")
+	expectErr("cluster", "delete", "--home", home)
+	expectErr("cluster", "delete", "--home", home, "--project", "p_1", "missing")
+	expectErr("cluster", "unknown")
+
 	expectErr("generate", "--bad")
 	expectErr("generate", "--home", home)
 	expectErr("generate", "--home", home, "--project", "missing")
@@ -297,5 +364,8 @@ func TestParseEngines(t *testing.T) {
 	engines := parseEngines("haproxy,nginx,bad")
 	if len(engines) != 2 {
 		t.Fatalf("engines=%v", engines)
+	}
+	if items := splitCSV(" a, ,b "); len(items) != 2 || items[0] != "a" || items[1] != "b" {
+		t.Fatalf("items=%v", items)
 	}
 }

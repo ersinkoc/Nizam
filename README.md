@@ -49,6 +49,8 @@ go run ./cmd/mizan project import ./haproxy.cfg --name imported-edge
 go run ./cmd/mizan project list
 go run ./cmd/mizan snapshot list --project <id>
 go run ./cmd/mizan snapshot tag --project <id> --label release-1 <snapshot-ref>
+go run ./cmd/mizan target add --project <id> --name edge-01 --host 10.0.0.10 --engine haproxy
+go run ./cmd/mizan cluster add --project <id> --name prod --target-ids <target-id>
 go run ./cmd/mizan generate --project <id> --target haproxy
 go run ./cmd/mizan validate --project <id> --target nginx
 go run ./cmd/mizan deploy --project <id> --target-id <target-id>
