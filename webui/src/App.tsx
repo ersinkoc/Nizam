@@ -14,13 +14,25 @@ import {
   ShieldCheck,
   Sun,
   Tag,
+  Trash2,
   TriangleAlert
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from './api/client';
 import { TopologyCanvas } from './components/topology/TopologyCanvas';
 import { connectEntities, moveEntity } from './lib/ir-mutations';
-import type { AuditEvent, Engine, GenerateResult, IRResponse, Model, NativeResult, ProjectMeta, ValidateResult } from './lib/types';
+import type {
+  AuditEvent,
+  DiffChange,
+  Engine,
+  GenerateResult,
+  IRResponse,
+  Model,
+  NativeResult,
+  ProjectMeta,
+  TargetsResponse,
+  ValidateResult
+} from './lib/types';
 
 const samplePatch = (model: Model): Model => ({
   ...model,
@@ -98,7 +110,9 @@ export function App() {
   const [validation, setValidation] = useState<ValidateResult | null>(null);
   const [snapshots, setSnapshots] = useState<string[]>([]);
   const [tags, setTags] = useState<{ label: string; ref: string }[]>([]);
+  const [diffChanges, setDiffChanges] = useState<DiffChange[]>([]);
   const [audit, setAudit] = useState<AuditEvent[]>([]);
+  const [targetsFile, setTargetsFile] = useState<TargetsResponse>({ targets: [], clusters: [] });
   const [target, setTarget] = useState<Engine>('haproxy');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -117,6 +131,8 @@ export function App() {
     if (!active) return;
     setGenerated(null);
     setValidation(null);
+    setDiffChanges([]);
+    setTargetsFile({ targets: [], clusters: [] });
     setError('');
     api
       .getIR(active.id)
@@ -125,6 +141,7 @@ export function App() {
         setDraft(JSON.stringify(res.ir, null, 2));
         void reloadSnapshots(active.id);
         void reloadAudit(active.id);
+        void reloadTargets(active.id);
       })
       .catch((err: Error) => setError(err.message));
   }, [active]);
@@ -169,6 +186,7 @@ export function App() {
       setDraft(JSON.stringify(created.ir, null, 2));
       await reloadSnapshots(created.project.id);
       await reloadAudit(created.project.id);
+      await reloadTargets(created.project.id);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -192,6 +210,7 @@ export function App() {
       setDraft(JSON.stringify(imported.ir, null, 2));
       await reloadSnapshots(imported.project.id);
       await reloadAudit(imported.project.id);
+      await reloadTargets(imported.project.id);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -210,6 +229,7 @@ export function App() {
       setDraft(JSON.stringify(saved.ir, null, 2));
       await reloadSnapshots(active.id);
       await reloadAudit(active.id);
+      setDiffChanges([]);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -227,6 +247,86 @@ export function App() {
   async function reloadAudit(projectID = active?.id ?? '') {
     if (!projectID) return;
     setAudit(await api.listAudit(projectID, 50));
+  }
+
+  async function reloadTargets(projectID = active?.id ?? '') {
+    if (!projectID) return;
+    setTargetsFile(await api.listTargets(projectID));
+  }
+
+  async function upsertTarget(formData: FormData) {
+    if (!active) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api.upsertTarget(active.id, {
+        name: String(formData.get('name') || ''),
+        host: String(formData.get('host') || ''),
+        port: Number(formData.get('port') || 22),
+        user: String(formData.get('user') || 'root'),
+        engine: String(formData.get('engine') || 'haproxy') as Engine,
+        config_path: String(formData.get('config_path') || ''),
+        reload_command: String(formData.get('reload_command') || ''),
+        sudo: formData.get('sudo') === 'on',
+        post_reload_probe: String(formData.get('post_reload_probe') || '')
+      });
+      await reloadTargets(active.id);
+      await reloadAudit(active.id);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteTarget(targetID: string) {
+    if (!active) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api.deleteTarget(active.id, targetID);
+      await reloadTargets(active.id);
+      await reloadAudit(active.id);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function upsertCluster(formData: FormData) {
+    if (!active) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api.upsertCluster(active.id, {
+        name: String(formData.get('name') || ''),
+        target_ids: formData.getAll('target_id').map(String),
+        parallelism: Number(formData.get('parallelism') || 1),
+        gate_on_failure: formData.get('gate_on_failure') === 'on'
+      });
+      await reloadTargets(active.id);
+      await reloadAudit(active.id);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteCluster(clusterID: string) {
+    if (!active) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api.deleteCluster(active.id, clusterID);
+      await reloadTargets(active.id);
+      await reloadAudit(active.id);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function tagLatest(formData: FormData) {
@@ -254,6 +354,20 @@ export function App() {
       setDraft(JSON.stringify(reverted.ir, null, 2));
       await reloadSnapshots(active.id);
       await reloadAudit(active.id);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function compareLatestSnapshots() {
+    if (!active || snapshots.length < 2) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await api.diffSnapshots(active.id, snapshots[1], snapshots[0]);
+      setDiffChanges(result.changes);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -421,14 +535,98 @@ export function App() {
           />
         </section>
 
+        <section className="panel targets-panel">
+          <div className="panel-head">
+            <h2><Server size={16} /> Deployment Targets</h2>
+            <button disabled={!active || busy} onClick={() => reloadTargets()}>
+              <RefreshCw size={16} /> Refresh
+            </button>
+          </div>
+          <div className="targets-grid">
+            <form action={upsertTarget} className="target-form">
+              <h3>Target</h3>
+              <input name="name" placeholder="edge-01" aria-label="Target name" />
+              <input name="host" placeholder="10.0.0.10" aria-label="Target host" />
+              <div className="target-form-row">
+                <input name="user" placeholder="root" aria-label="SSH user" />
+                <input name="port" type="number" min="1" max="65535" placeholder="22" aria-label="SSH port" />
+              </div>
+              <select name="engine" aria-label="Target engine" defaultValue="haproxy">
+                <option value="haproxy">HAProxy</option>
+                <option value="nginx">Nginx</option>
+              </select>
+              <input name="config_path" placeholder="/etc/haproxy/haproxy.cfg" aria-label="Remote config path" />
+              <input name="reload_command" placeholder="systemctl reload haproxy" aria-label="Reload command" />
+              <input name="post_reload_probe" placeholder="https://edge.example.com/healthz" aria-label="Post reload probe" />
+              <label className="check-line"><input type="checkbox" name="sudo" /> Use sudo</label>
+              <button type="submit" disabled={!active || busy}><Plus size={16} /> Add Target</button>
+            </form>
+
+            <div className="target-list">
+              <h3>Targets</h3>
+              {targetsFile.targets.length ? targetsFile.targets.map((item) => (
+                <article key={item.id} className="target-card">
+                  <div>
+                    <strong>{item.name}</strong>
+                    <span>{item.user}@{item.host}:{item.port}</span>
+                  </div>
+                  <small>{item.engine} to {item.config_path}</small>
+                  <code>{item.reload_command}</code>
+                  <button onClick={() => deleteTarget(item.id)} disabled={busy} title="Delete target">
+                    <Trash2 size={15} />
+                  </button>
+                </article>
+              )) : <p className="muted">No deployment targets yet.</p>}
+            </div>
+
+            <form action={upsertCluster} className="cluster-form">
+              <h3>Cluster</h3>
+              <input name="name" placeholder="production-edge" aria-label="Cluster name" />
+              <input name="parallelism" type="number" min="1" placeholder="1" aria-label="Deployment parallelism" />
+              <label className="check-line"><input type="checkbox" name="gate_on_failure" defaultChecked /> Gate on failure</label>
+              <div className="cluster-targets">
+                {targetsFile.targets.map((item) => (
+                  <label key={item.id} className="check-line">
+                    <input type="checkbox" name="target_id" value={item.id} />
+                    {item.name}
+                  </label>
+                ))}
+              </div>
+              <button type="submit" disabled={!active || busy || !targetsFile.targets.length}><Plus size={16} /> Add Cluster</button>
+            </form>
+
+            <div className="cluster-list">
+              <h3>Clusters</h3>
+              {targetsFile.clusters.length ? targetsFile.clusters.map((item) => (
+                <article key={item.id} className="cluster-card">
+                  <div>
+                    <strong>{item.name}</strong>
+                    <span>{item.target_ids.length} target(s), parallelism {item.parallelism}</span>
+                  </div>
+                  <small>{item.gate_on_failure ? 'Stops on first failed deployment' : 'Continues after failures'}</small>
+                  <button onClick={() => deleteCluster(item.id)} disabled={busy} title="Delete cluster">
+                    <Trash2 size={15} />
+                  </button>
+                </article>
+              )) : <p className="muted">No clusters yet.</p>}
+            </div>
+          </div>
+        </section>
+
         <section className="panel snapshots">
           <div className="panel-head">
             <h2><History size={16} /> Snapshots</h2>
-            <form action={tagLatest} className="tag-form">
-              <input name="label" placeholder="Tag latest" aria-label="Snapshot tag label" />
-              <button disabled={!snapshots.length || busy}><Tag size={16} /> Tag</button>
-            </form>
+            <div className="snapshot-actions">
+              <button disabled={snapshots.length < 2 || busy} onClick={compareLatestSnapshots}>
+                <Code2 size={16} /> Diff
+              </button>
+              <form action={tagLatest} className="tag-form">
+                <input name="label" placeholder="Tag latest" aria-label="Snapshot tag label" />
+                <button disabled={!snapshots.length || busy}><Tag size={16} /> Tag</button>
+              </form>
+            </div>
           </div>
+          <DiffList changes={diffChanges} />
           <div className="snapshot-grid">
             <div>
               <h3>History</h3>
@@ -462,6 +660,23 @@ export function App() {
         </section>
       </section>
     </main>
+  );
+}
+
+function DiffList({ changes }: { changes: DiffChange[] }) {
+  if (!changes.length) {
+    return null;
+  }
+  return (
+    <div className="diff-list">
+      {changes.map((change, index) => (
+        <article key={`${change.kind}-${change.path}-${index}`} className={`diff-change ${change.kind}`}>
+          <strong>{change.kind}</strong>
+          <span>{change.entity_type} / {change.entity_id}</span>
+          <code>{change.path}</code>
+        </article>
+      ))}
+    </div>
   );
 }
 

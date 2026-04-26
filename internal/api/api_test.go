@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -84,6 +86,34 @@ func TestProjectLifecycleEndpoints(t *testing.T) {
 	res = doJSON(mux, http.MethodPost, "/api/v1/projects/"+id+"/validate", map[string]string{"target": "haproxy"})
 	if res.Code != http.StatusOK {
 		t.Fatalf("validate status=%d body=%s", res.Code, res.Body.String())
+	}
+	res = doJSON(mux, http.MethodPost, "/api/v1/projects/"+id+"/targets", map[string]any{"name": "prod-a", "host": "lb1.example.com", "engine": "haproxy"})
+	if res.Code != http.StatusOK {
+		t.Fatalf("target status=%d body=%s", res.Code, res.Body.String())
+	}
+	var target store.Target
+	if err := json.Unmarshal(res.Body.Bytes(), &target); err != nil {
+		t.Fatal(err)
+	}
+	res = doJSON(mux, http.MethodPost, "/api/v1/projects/"+id+"/clusters", map[string]any{"name": "prod", "target_ids": []string{target.ID}})
+	if res.Code != http.StatusOK {
+		t.Fatalf("cluster status=%d body=%s", res.Code, res.Body.String())
+	}
+	var cluster store.Cluster
+	if err := json.Unmarshal(res.Body.Bytes(), &cluster); err != nil {
+		t.Fatal(err)
+	}
+	res = doJSON(mux, http.MethodGet, "/api/v1/projects/"+id+"/targets", nil)
+	if res.Code != http.StatusOK || !bytes.Contains(res.Body.Bytes(), []byte("prod-a")) {
+		t.Fatalf("targets status=%d body=%s", res.Code, res.Body.String())
+	}
+	res = doJSON(mux, http.MethodDelete, "/api/v1/projects/"+id+"/targets/"+target.ID, nil)
+	if res.Code != http.StatusNoContent {
+		t.Fatalf("delete target status=%d body=%s", res.Code, res.Body.String())
+	}
+	res = doJSON(mux, http.MethodDelete, "/api/v1/projects/"+id+"/clusters/"+cluster.ID, nil)
+	if res.Code != http.StatusNoContent {
+		t.Fatalf("delete cluster status=%d body=%s", res.Code, res.Body.String())
 	}
 
 	res = doJSON(mux, http.MethodGet, "/api/v1/projects/"+id+"/ir/snapshots", nil)
@@ -221,6 +251,8 @@ func TestAPIErrorBranches(t *testing.T) {
 		{"/api/v1/projects/" + id + "/ir/tag", map[string]any{"snapshot_ref": "missing", "label": "bad"}, http.StatusBadRequest},
 		{"/api/v1/projects/" + id + "/generate", map[string]string{"target": "bad"}, http.StatusBadRequest},
 		{"/api/v1/projects/" + id + "/validate", map[string]string{"target": "bad"}, http.StatusBadRequest},
+		{"/api/v1/projects/" + id + "/targets", map[string]string{"name": ""}, http.StatusBadRequest},
+		{"/api/v1/projects/" + id + "/clusters", map[string]string{"name": ""}, http.StatusBadRequest},
 	} {
 		res := doPossiblyRawJSON(mux, http.MethodPost, tc.path, tc.body, nil)
 		if strings.HasSuffix(tc.path, "/ir") {
@@ -229,6 +261,220 @@ func TestAPIErrorBranches(t *testing.T) {
 		if res.Code != tc.status {
 			t.Fatalf("%s status=%d want=%d body=%s", tc.path, res.Code, tc.status, res.Body.String())
 		}
+	}
+}
+
+func TestAPIMoreBranches(t *testing.T) {
+	st := store.New(t.TempDir())
+	mux := http.NewServeMux()
+	Register(mux, st)
+
+	if res := doPossiblyRawJSON(mux, http.MethodPost, "/api/v1/projects/import", "{bad", nil); res.Code != http.StatusBadRequest {
+		t.Fatalf("bad import json status=%d body=%s", res.Code, res.Body.String())
+	}
+	res := doJSON(mux, http.MethodPost, "/api/v1/projects/import", map[string]string{"config": "frontend imported\n  bind :80\n"})
+	if res.Code != http.StatusCreated {
+		t.Fatalf("default filename import status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	res = doJSON(mux, http.MethodPost, "/api/v1/projects", map[string]any{"name": "edge", "engines": []string{"haproxy"}})
+	if res.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", res.Code, res.Body.String())
+	}
+	var created struct {
+		Project struct {
+			ID string `json:"id"`
+		} `json:"project"`
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	id := created.Project.ID
+	version := created.Version
+
+	if res := doJSON(mux, http.MethodPatch, "/api/v1/projects/missing/ir", map[string]any{"ir": map[string]any{}}); res.Code != http.StatusNotFound {
+		t.Fatalf("missing patch status=%d body=%s", res.Code, res.Body.String())
+	}
+	mutation := map[string]any{
+		"mutation": map[string]any{
+			"type": "frontend.create",
+			"data": map[string]any{"id": "fe_web", "name": "web", "bind": ":80", "protocol": "http"},
+		},
+	}
+	res = doJSONWithHeader(mux, http.MethodPatch, "/api/v1/projects/"+id+"/ir", mutation, map[string]string{"If-Match": version})
+	if res.Code != http.StatusOK {
+		t.Fatalf("mutation patch status=%d body=%s", res.Code, res.Body.String())
+	}
+	var patched struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &patched); err != nil {
+		t.Fatal(err)
+	}
+	currentModel, _, err := st.GetIR(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentModel.Description = "conflict candidate"
+	res = doJSONWithHeader(mux, http.MethodPatch, "/api/v1/projects/"+id+"/ir", map[string]any{"ir": currentModel}, map[string]string{"If-Match": version})
+	if res.Code != http.StatusConflict {
+		t.Fatalf("conflict patch status=%d body=%s", res.Code, res.Body.String())
+	}
+	res = doJSONWithHeader(mux, http.MethodPatch, "/api/v1/projects/"+id+"/ir", map[string]any{
+		"mutation": map[string]any{"type": "frontend.create"},
+	}, map[string]string{"If-Match": patched.Version})
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("bad mutation status=%d body=%s", res.Code, res.Body.String())
+	}
+	badIR := ir.EmptyModel(id, "bad", "", []ir.Engine{ir.EngineHAProxy})
+	badIR.Frontends = []ir.Frontend{{ID: "fe_bad", Bind: ":443"}}
+	res = doJSONWithHeader(mux, http.MethodPatch, "/api/v1/projects/"+id+"/ir", map[string]any{"ir": badIR}, map[string]string{"If-Match": patched.Version})
+	if res.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("lint patch status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	errorProject := doJSON(mux, http.MethodPost, "/api/v1/projects", map[string]any{"name": "snapshot-error", "engines": []string{"haproxy"}})
+	if errorProject.Code != http.StatusCreated {
+		t.Fatalf("snapshot-error create status=%d body=%s", errorProject.Code, errorProject.Body.String())
+	}
+	var errorCreated struct {
+		Project struct {
+			ID string `json:"id"`
+		} `json:"project"`
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(errorProject.Body.Bytes(), &errorCreated); err != nil {
+		t.Fatal(err)
+	}
+	errorModel, _, err := st.GetIR(t.Context(), errorCreated.Project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errorModel.Description = "force snapshot write error"
+	snapshotPath := filepath.Join(st.Root(), "projects", errorCreated.Project.ID, "snapshots")
+	if err := os.RemoveAll(snapshotPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(snapshotPath, []byte("file blocks snapshot dir"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res = doJSONWithHeader(mux, http.MethodPatch, "/api/v1/projects/"+errorCreated.Project.ID+"/ir", map[string]any{"ir": errorModel}, map[string]string{"If-Match": errorCreated.Version})
+	if res.Code != http.StatusInternalServerError {
+		t.Fatalf("snapshot write patch status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	for _, tc := range []struct {
+		path   string
+		body   any
+		status int
+	}{
+		{"/api/v1/projects/" + id + "/ir/revert", "{bad", http.StatusBadRequest},
+		{"/api/v1/projects/" + id + "/ir/revert", map[string]string{"snapshot_ref": "missing"}, http.StatusInternalServerError},
+		{"/api/v1/projects/" + id + "/ir/diff", "{bad", http.StatusBadRequest},
+		{"/api/v1/projects/" + id + "/ir/tag", "{bad", http.StatusBadRequest},
+		{"/api/v1/projects/" + id + "/targets", "{bad", http.StatusBadRequest},
+		{"/api/v1/projects/" + id + "/clusters", "{bad", http.StatusBadRequest},
+	} {
+		res := doPossiblyRawJSON(mux, http.MethodPost, tc.path, tc.body, nil)
+		if res.Code != tc.status {
+			t.Fatalf("%s status=%d want=%d body=%s", tc.path, res.Code, tc.status, res.Body.String())
+		}
+	}
+
+	res = doJSON(mux, http.MethodGet, "/api/v1/projects/"+id+"/ir/snapshots", nil)
+	var snapshots []string
+	if err := json.Unmarshal(res.Body.Bytes(), &snapshots); err != nil {
+		t.Fatal(err)
+	}
+	res = doJSON(mux, http.MethodPost, "/api/v1/projects/"+id+"/ir/diff", map[string]string{"from_hash": snapshots[0], "to_hash": "missing"})
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("diff missing to status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	if err := os.WriteFile(filepath.Join(st.Root(), "projects", id, "snapshot-tags.json"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res = doJSON(mux, http.MethodGet, "/api/v1/projects/"+id+"/ir/tags", nil)
+	if res.Code != http.StatusInternalServerError {
+		t.Fatalf("tags corrupt status=%d body=%s", res.Code, res.Body.String())
+	}
+	if err := os.WriteFile(filepath.Join(st.Root(), "projects", id, "audit.jsonl"), []byte(strings.Repeat("x", 70_000)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res = doJSON(mux, http.MethodGet, "/api/v1/projects/"+id+"/audit?limit=1", nil)
+	if res.Code != http.StatusInternalServerError {
+		t.Fatalf("audit corrupt status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res = doJSON(mux, http.MethodGet, "/api/v1/projects/missing/targets", nil); res.Code != http.StatusNotFound {
+		t.Fatalf("missing targets status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res = doJSON(mux, http.MethodDelete, "/api/v1/projects/"+id+"/targets/missing", nil); res.Code != http.StatusNotFound {
+		t.Fatalf("missing delete target status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res = doJSON(mux, http.MethodDelete, "/api/v1/projects/"+id+"/clusters/missing", nil); res.Code != http.StatusNotFound {
+		t.Fatalf("missing delete cluster status=%d body=%s", res.Code, res.Body.String())
+	}
+}
+
+func TestAPIStoreAndNativeFailureBranches(t *testing.T) {
+	rootFile := filepath.Join(t.TempDir(), "root-file")
+	if err := os.WriteFile(rootFile, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	badStoreMux := http.NewServeMux()
+	Register(badStoreMux, store.New(rootFile))
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   any
+		status int
+	}{
+		{http.MethodGet, "/api/v1/projects", nil, http.StatusInternalServerError},
+		{http.MethodPost, "/api/v1/projects", map[string]string{"name": "bad"}, http.StatusInternalServerError},
+		{http.MethodPost, "/api/v1/projects/import", map[string]string{"filename": "haproxy.cfg", "config": "frontend web\n  bind :80\n"}, http.StatusInternalServerError},
+	} {
+		res := doPossiblyRawJSON(badStoreMux, tc.method, tc.path, tc.body, nil)
+		if res.Code != tc.status {
+			t.Fatalf("%s %s status=%d want=%d body=%s", tc.method, tc.path, res.Code, tc.status, res.Body.String())
+		}
+	}
+
+	dir := t.TempDir()
+	oldPath := os.Getenv("PATH")
+	t.Cleanup(func() { _ = os.Setenv("PATH", oldPath) })
+	if err := os.Setenv("PATH", dir+string(os.PathListSeparator)+oldPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "haproxy.bat"), []byte("@echo off\r\necho native failed\r\nexit /b 3\r\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(t.TempDir())
+	mux := http.NewServeMux()
+	Register(mux, st)
+	res := doJSON(mux, http.MethodPost, "/api/v1/projects", map[string]any{"name": "edge", "engines": []string{"haproxy"}})
+	if res.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", res.Code, res.Body.String())
+	}
+	var created struct {
+		Project struct {
+			ID string `json:"id"`
+		} `json:"project"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	res = doJSON(mux, http.MethodPost, "/api/v1/projects/"+created.Project.ID+"/generate", nil)
+	if res.Code != http.StatusOK {
+		t.Fatalf("default generate status=%d body=%s", res.Code, res.Body.String())
+	}
+	res = doJSON(mux, http.MethodPost, "/api/v1/projects/"+created.Project.ID+"/validate", nil)
+	if res.Code != http.StatusOK {
+		t.Fatalf("default validate status=%d body=%s", res.Code, res.Body.String())
+	}
+	res = doJSON(mux, http.MethodPost, "/api/v1/projects/"+created.Project.ID+"/validate", map[string]string{"target": "haproxy"})
+	if res.Code != http.StatusOK || !bytes.Contains(res.Body.Bytes(), []byte("native failed")) {
+		t.Fatalf("failed native validate status=%d body=%s", res.Code, res.Body.String())
 	}
 }
 
@@ -247,6 +493,11 @@ func TestAPIHelpers(t *testing.T) {
 	if hasErrors([]ir.Issue{{Severity: ir.SeverityWarning}}) {
 		t.Fatal("warnings should not be errors")
 	}
+	if !hasErrors([]ir.Issue{{Severity: ir.SeverityError}}) {
+		t.Fatal("errors should be detected")
+	}
+	h := &Handler{}
+	h.audit(req, "", "noop", "", "", "success", "", nil)
 }
 
 func doJSON(mux http.Handler, method, path string, body any) *httptest.ResponseRecorder {

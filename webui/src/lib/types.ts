@@ -142,3 +142,46 @@ export interface AuditEvent {
   error_message?: string;
   metadata?: Record<string, unknown>;
 }
+
+export interface DiffChange {
+  kind: 'added' | 'removed' | 'modified';
+  entity_type: string;
+  entity_id: string;
+  path: string;
+  before?: unknown;
+  after?: unknown;
+}
+
+export interface DiffResponse {
+  changes: DiffChange[];
+}
+
+export interface Target {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  user: string;
+  engine: Engine;
+  config_path: string;
+  reload_command: string;
+  sudo: boolean;
+  post_reload_probe?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Cluster {
+  id: string;
+  name: string;
+  target_ids: string[];
+  parallelism: number;
+  gate_on_failure: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TargetsResponse {
+  targets: Target[];
+  clusters: Cluster[];
+}

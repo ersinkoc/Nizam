@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"reflect"
 	"strconv"
 
 	"github.com/mizanproxy/mizan/internal/ir"
@@ -39,6 +38,11 @@ func Register(mux *http.ServeMux, st *store.Store) {
 	mux.HandleFunc("POST /api/v1/projects/{id}/generate", h.generate)
 	mux.HandleFunc("POST /api/v1/projects/{id}/validate", h.validate)
 	mux.HandleFunc("GET /api/v1/projects/{id}/audit", h.listAudit)
+	mux.HandleFunc("GET /api/v1/projects/{id}/targets", h.listTargets)
+	mux.HandleFunc("POST /api/v1/projects/{id}/targets", h.upsertTarget)
+	mux.HandleFunc("DELETE /api/v1/projects/{id}/targets/{targetID}", h.deleteTarget)
+	mux.HandleFunc("POST /api/v1/projects/{id}/clusters", h.upsertCluster)
+	mux.HandleFunc("DELETE /api/v1/projects/{id}/clusters/{clusterID}", h.deleteCluster)
 }
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
@@ -260,7 +264,7 @@ func (h *Handler) diffSnapshots(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, http.StatusNotFound, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"changes": diffModels(from, to)})
+	writeJSON(w, http.StatusOK, map[string]any{"changes": ir.Diff(from, to)})
 }
 
 func (h *Handler) listSnapshotTags(w http.ResponseWriter, r *http.Request) {
@@ -365,6 +369,63 @@ func (h *Handler) listAudit(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, events)
 }
 
+func (h *Handler) listTargets(w http.ResponseWriter, r *http.Request) {
+	targets, err := h.store.ListTargets(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeProblem(w, http.StatusNotFound, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, targets)
+}
+
+func (h *Handler) upsertTarget(w http.ResponseWriter, r *http.Request) {
+	var target store.Target
+	if err := json.NewDecoder(r.Body).Decode(&target); err != nil {
+		writeProblem(w, http.StatusBadRequest, err)
+		return
+	}
+	target, err := h.store.UpsertTarget(r.Context(), r.PathValue("id"), target)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, err)
+		return
+	}
+	h.audit(r, r.PathValue("id"), "target.upsert", "", target.Engine, "success", "", map[string]any{"target_id": target.ID, "host": target.Host})
+	writeJSON(w, http.StatusOK, target)
+}
+
+func (h *Handler) deleteTarget(w http.ResponseWriter, r *http.Request) {
+	if err := h.store.DeleteTarget(r.Context(), r.PathValue("id"), r.PathValue("targetID")); err != nil {
+		writeProblem(w, http.StatusNotFound, err)
+		return
+	}
+	h.audit(r, r.PathValue("id"), "target.delete", "", "", "success", "", map[string]any{"target_id": r.PathValue("targetID")})
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) upsertCluster(w http.ResponseWriter, r *http.Request) {
+	var cluster store.Cluster
+	if err := json.NewDecoder(r.Body).Decode(&cluster); err != nil {
+		writeProblem(w, http.StatusBadRequest, err)
+		return
+	}
+	cluster, err := h.store.UpsertCluster(r.Context(), r.PathValue("id"), cluster)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, err)
+		return
+	}
+	h.audit(r, r.PathValue("id"), "cluster.upsert", "", "", "success", "", map[string]any{"cluster_id": cluster.ID, "targets": len(cluster.TargetIDs)})
+	writeJSON(w, http.StatusOK, cluster)
+}
+
+func (h *Handler) deleteCluster(w http.ResponseWriter, r *http.Request) {
+	if err := h.store.DeleteCluster(r.Context(), r.PathValue("id"), r.PathValue("clusterID")); err != nil {
+		writeProblem(w, http.StatusNotFound, err)
+		return
+	}
+	h.audit(r, r.PathValue("id"), "cluster.delete", "", "", "success", "", map[string]any{"cluster_id": r.PathValue("clusterID")})
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func hasErrors(issues []ir.Issue) bool {
 	for _, issue := range issues {
 		if issue.Severity == ir.SeverityError {
@@ -372,34 +433,6 @@ func hasErrors(issues []ir.Issue) bool {
 		}
 	}
 	return false
-}
-
-type change struct {
-	Path string `json:"path"`
-	Kind string `json:"kind"`
-}
-
-func diffModels(from, to *ir.Model) []change {
-	var changes []change
-	if from.Name != to.Name {
-		changes = append(changes, change{Path: "name", Kind: "modified"})
-	}
-	compareSlice := func(path string, a, b any) {
-		if !reflect.DeepEqual(a, b) {
-			changes = append(changes, change{Path: path, Kind: "modified"})
-		}
-	}
-	compareSlice("engines", from.Engines, to.Engines)
-	compareSlice("frontends", from.Frontends, to.Frontends)
-	compareSlice("backends", from.Backends, to.Backends)
-	compareSlice("servers", from.Servers, to.Servers)
-	compareSlice("rules", from.Rules, to.Rules)
-	compareSlice("tls_profiles", from.TLSProfiles, to.TLSProfiles)
-	compareSlice("health_checks", from.HealthChecks, to.HealthChecks)
-	compareSlice("rate_limits", from.RateLimits, to.RateLimits)
-	compareSlice("caches", from.Caches, to.Caches)
-	compareSlice("loggers", from.Loggers, to.Loggers)
-	return changes
 }
 
 func (h *Handler) audit(r *http.Request, projectID, action, snapshot string, target ir.Engine, outcome, errMsg string, metadata map[string]any) {

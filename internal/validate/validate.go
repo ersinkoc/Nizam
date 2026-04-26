@@ -30,6 +30,14 @@ type Result struct {
 	Native    NativeResult     `json:"native"`
 }
 
+var (
+	createTemp      = os.CreateTemp
+	writeTempConfig = func(tmp *os.File, config string) error {
+		_, err := tmp.WriteString(config)
+		return err
+	}
+)
+
 func Generate(m *ir.Model, target ir.Engine) (translate.Result, error) {
 	switch target {
 	case ir.EngineHAProxy:
@@ -64,12 +72,12 @@ func runNative(ctx context.Context, target ir.Engine, config string) NativeResul
 	if err != nil {
 		return NativeResult{Available: false, Skipped: true, Error: bin + " not found on PATH"}
 	}
-	tmp, err := os.CreateTemp("", "mizan-*")
+	tmp, err := createTemp("", "mizan-*")
 	if err != nil {
 		return NativeResult{Available: true, Skipped: true, Error: err.Error()}
 	}
 	defer os.Remove(tmp.Name())
-	if _, err := tmp.WriteString(config); err != nil {
+	if err := writeTempConfig(tmp, config); err != nil {
 		_ = tmp.Close()
 		return NativeResult{Available: true, Skipped: true, Error: err.Error()}
 	}

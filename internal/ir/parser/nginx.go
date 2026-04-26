@@ -21,9 +21,6 @@ func ParseNginx(config string) (*ir.Model, error) {
 			continue
 		}
 		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
-		}
 		switch {
 		case fields[0] == "upstream" && len(fields) >= 2:
 			block, name = "upstream", strings.TrimSuffix(fields[1], "{")
@@ -80,6 +77,9 @@ func parseNginxServerLine(m *ir.Model, fe *ir.Frontend, fields []string) {
 	case "listen":
 		if len(fields) > 1 {
 			fe.Bind = ":" + fields[1]
+		}
+		if len(fields) < 3 {
+			return
 		}
 		for _, field := range fields[2:] {
 			if field == "ssl" {

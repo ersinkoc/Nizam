@@ -24,6 +24,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -51,6 +52,7 @@ button:disabled {
 }
 
 input,
+select,
 textarea {
   width: 100%;
   border: 1px solid var(--border);
@@ -59,7 +61,8 @@ textarea {
   background: var(--input);
 }
 
-input {
+input,
+select {
   height: 36px;
   padding: 0 10px;
 }
@@ -425,6 +428,7 @@ textarea {
 }
 
 .snapshots,
+.targets-panel,
 .audit-panel {
   margin-top: 14px;
 }
@@ -536,6 +540,52 @@ textarea {
   gap: 8px;
 }
 
+.snapshot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.diff-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  padding: 14px;
+}
+
+.diff-change {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--warn);
+  border-radius: 8px;
+  background: var(--input);
+  padding: 9px 10px;
+}
+
+.diff-change.added {
+  border-left-color: var(--accent);
+}
+
+.diff-change.removed {
+  border-left-color: var(--danger);
+}
+
+.diff-change strong {
+  text-transform: capitalize;
+}
+
+.diff-change span,
+.diff-change code {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .snapshot-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -621,6 +671,120 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.targets-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1.2fr);
+  gap: 14px;
+  padding: 14px;
+}
+
+.target-form,
+.cluster-form,
+.target-list,
+.cluster-list {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  min-width: 0;
+}
+
+.target-form h3,
+.cluster-form h3,
+.target-list h3,
+.cluster-list h3 {
+  margin: 0 0 2px;
+  font-size: 14px;
+}
+
+.target-form-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px;
+  gap: 8px;
+}
+
+.check-line {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.check-line input {
+  width: 16px;
+  height: 16px;
+}
+
+.target-card,
+.cluster-card {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--accent);
+  border-radius: 8px;
+  background: var(--input);
+  padding: 10px 48px 10px 12px;
+}
+
+.target-card div,
+.cluster-card div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.target-card strong,
+.target-card span,
+.target-card small,
+.target-card code,
+.cluster-card strong,
+.cluster-card span,
+.cluster-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-card span,
+.target-card small,
+.cluster-card span,
+.cluster-card small,
+.muted {
+  color: var(--muted);
+}
+
+.target-card code {
+  color: var(--muted);
+  font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+}
+
+.target-card button,
+.cluster-card button {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+}
+
+.cluster-form,
+.cluster-list {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.cluster-targets {
+  display: grid;
+  gap: 4px;
+  max-height: 160px;
+  overflow: auto;
+}
+
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -634,6 +798,7 @@ textarea {
 
   .metrics,
   .split,
+  .targets-grid,
   .snapshot-grid {
     grid-template-columns: 1fr;
   }

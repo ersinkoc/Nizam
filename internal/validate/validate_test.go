@@ -2,8 +2,10 @@ package validate
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mizanproxy/mizan/internal/ir"
@@ -11,6 +13,9 @@ import (
 
 func TestGenerateAndValidateUnknownTarget(t *testing.T) {
 	model := ir.EmptyModel("p_1", "edge", "", []ir.Engine{ir.EngineHAProxy})
+	if result, err := Generate(model, ir.EngineNginx); err != nil || result.Target != ir.EngineNginx {
+		t.Fatalf("expected nginx generation, got result=%+v err=%v", result, err)
+	}
 	if _, err := Generate(model, ir.Engine("caddy")); err == nil {
 		t.Fatal("expected unknown generation target error")
 	}
@@ -50,6 +55,42 @@ func TestRunNativeSuccessAndFailureWithFakeBinary(t *testing.T) {
 	failed := runNative(context.Background(), ir.EngineNginx, "events {}\n")
 	if !failed.Available || failed.Skipped || failed.ExitCode == 0 || failed.Stderr == "" {
 		t.Fatalf("unexpected failed native result: %+v", failed)
+	}
+
+	writeFakeBinary(t, filepath.Join(dir, "custom.bat"), "@echo off\r\necho custom\r\nexit /b 0\r\n")
+	unsupported := runNative(context.Background(), ir.Engine("custom"), "config")
+	if unsupported.Available || !unsupported.Skipped || !strings.Contains(unsupported.Error, "unsupported target") {
+		t.Fatalf("unexpected unsupported native result: %+v", unsupported)
+	}
+}
+
+func TestRunNativeTempErrors(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := os.Getenv("PATH")
+	t.Cleanup(func() { _ = os.Setenv("PATH", oldPath) })
+	if err := os.Setenv("PATH", dir+string(os.PathListSeparator)+oldPath); err != nil {
+		t.Fatal(err)
+	}
+	writeFakeBinary(t, filepath.Join(dir, "haproxy.bat"), "@echo off\r\necho ok\r\nexit /b 0\r\n")
+
+	originalCreateTemp := createTemp
+	createTemp = func(string, string) (*os.File, error) {
+		return nil, errors.New("temp unavailable")
+	}
+	got := runNative(context.Background(), ir.EngineHAProxy, "global\n")
+	createTemp = originalCreateTemp
+	if !got.Available || !got.Skipped || !strings.Contains(got.Error, "temp unavailable") {
+		t.Fatalf("unexpected create temp error result: %+v", got)
+	}
+
+	originalWriteTempConfig := writeTempConfig
+	writeTempConfig = func(*os.File, string) error {
+		return errors.New("write unavailable")
+	}
+	got = runNative(context.Background(), ir.EngineHAProxy, "global\n")
+	writeTempConfig = originalWriteTempConfig
+	if !got.Available || !got.Skipped || !strings.Contains(got.Error, "write unavailable") {
+		t.Fatalf("unexpected write temp error result: %+v", got)
 	}
 }
 

@@ -98,9 +98,7 @@ func Clone(m *Model) (*Model, error) {
 		return nil, err
 	}
 	var cp Model
-	if err := json.Unmarshal(b, &cp); err != nil {
-		return nil, err
-	}
+	_ = json.Unmarshal(b, &cp)
 	return &cp, nil
 }
 

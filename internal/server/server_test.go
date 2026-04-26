@@ -1,6 +1,7 @@
 package server
 
 import (
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -40,5 +41,18 @@ func TestRecoverer(t *testing.T) {
 	handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/", nil))
 	if res.Code != http.StatusInternalServerError {
 		t.Fatalf("status=%d", res.Code)
+	}
+}
+
+func TestEmbeddedUIRootAndDefaultLogger(t *testing.T) {
+	handler := logger(nil, embeddedUI())
+	for _, path := range []string{"/", ""} {
+		req := httptest.NewRequest(http.MethodGet, "http://example.com"+path, nil)
+		res := httptest.NewRecorder()
+		handler.ServeHTTP(res, req)
+		if res.Code != http.StatusOK {
+			t.Fatalf("root path %q status=%d", path, res.Code)
+		}
+		_, _ = io.Copy(io.Discard, res.Body)
 	}
 }

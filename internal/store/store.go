@@ -51,11 +51,19 @@ type AuditEvent struct {
 	Metadata       map[string]any `json:"metadata,omitempty"`
 }
 
+var (
+	userHomeDir = os.UserHomeDir
+	mkdirAll    = os.MkdirAll
+	createTemp  = os.CreateTemp
+	renameFile  = os.Rename
+	randRead    = rand.Read
+)
+
 func DefaultRoot() string {
 	if v := os.Getenv("MIZAN_HOME"); v != "" {
 		return v
 	}
-	home, err := os.UserHomeDir()
+	home, err := userHomeDir()
 	if err != nil {
 		return ".mizan"
 	}
@@ -72,7 +80,7 @@ func New(root string) *Store {
 func (s *Store) Root() string { return s.root }
 
 func (s *Store) Bootstrap(ctx context.Context) error {
-	return os.MkdirAll(filepath.Join(s.root, "projects"), 0o755)
+	return mkdirAll(filepath.Join(s.root, "projects"), 0o755)
 }
 
 func (s *Store) ListProjects(ctx context.Context) ([]ProjectMeta, error) {
@@ -107,7 +115,7 @@ func (s *Store) CreateProject(ctx context.Context, name, description string, eng
 	now := time.Now().UTC()
 	meta := ProjectMeta{ID: id, Name: name, Description: description, Engines: engines, CreatedAt: now, UpdatedAt: now}
 	model := ir.EmptyModel(id, name, description, engines)
-	if err := os.MkdirAll(s.projectDir(id), 0o755); err != nil {
+	if err := mkdirAll(s.projectDir(id), 0o755); err != nil {
 		return ProjectMeta{}, nil, "", err
 	}
 	if err := writeJSON(s.metaPath(id), meta); err != nil {
@@ -136,7 +144,7 @@ func (s *Store) ImportProject(ctx context.Context, name, description string, mod
 		model.Description = description
 	}
 	meta := ProjectMeta{ID: id, Name: model.Name, Description: model.Description, Engines: model.Engines, CreatedAt: now, UpdatedAt: now}
-	if err := os.MkdirAll(s.projectDir(id), 0o755); err != nil {
+	if err := mkdirAll(s.projectDir(id), 0o755); err != nil {
 		return ProjectMeta{}, nil, "", err
 	}
 	if err := writeJSON(s.metaPath(id), meta); err != nil {
@@ -313,7 +321,7 @@ func (s *Store) AppendAudit(ctx context.Context, event AuditEvent) error {
 	if event.Outcome == "" {
 		event.Outcome = "success"
 	}
-	if err := os.MkdirAll(s.projectDir(event.ProjectID), 0o755); err != nil {
+	if err := mkdirAll(s.projectDir(event.ProjectID), 0o755); err != nil {
 		return err
 	}
 	b, err := json.Marshal(event)
@@ -360,7 +368,7 @@ func (s *Store) ListAudit(ctx context.Context, id string, limit int) ([]AuditEve
 
 func (s *Store) writeSnapshot(id, hash string, model *ir.Model) error {
 	dir := filepath.Join(s.projectDir(id), "snapshots")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := mkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	name := time.Now().UTC().Format("20060102T150405") + "-" + hash[:12] + ".json"
@@ -379,7 +387,7 @@ var ErrVersionConflict = errors.New("version conflict")
 
 func newID() string {
 	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
+	if _, err := randRead(b[:]); err != nil {
 		return hex.EncodeToString([]byte(time.Now().Format("150405.000000")))
 	}
 	return "p_" + hex.EncodeToString(b[:])
@@ -411,10 +419,10 @@ func writeCanonical(path string, model *ir.Model) error {
 
 func atomicWrite(path string, data []byte) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := mkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, ".tmp-*")
+	tmp, err := createTemp(dir, ".tmp-*")
 	if err != nil {
 		return err
 	}
@@ -431,7 +439,7 @@ func atomicWrite(path string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, path)
+	return renameFile(tmpName, path)
 }
 
 func (s *Store) readTags(id string) ([]SnapshotTag, error) {

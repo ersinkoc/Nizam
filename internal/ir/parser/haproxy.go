@@ -22,9 +22,6 @@ func ParseHAProxy(config string) (*ir.Model, error) {
 			continue
 		}
 		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
-		}
 		switch fields[0] {
 		case "frontend", "listen":
 			if len(fields) < 2 {

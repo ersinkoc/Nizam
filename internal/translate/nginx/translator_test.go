@@ -51,6 +51,16 @@ func TestGenerateNginxMissingOptionalReferences(t *testing.T) {
 	}
 }
 
+func TestGenerateNginxServerDefaults(t *testing.T) {
+	model := sampleModel()
+	model.Backends[0].Servers = []string{"s_zero"}
+	model.Servers = []ir.Server{{ID: "s_zero", Address: "10.0.0.3", Port: 8081}}
+	result := Generate(model)
+	if !strings.Contains(result.Config, "server 10.0.0.3:8081 weight=100;") {
+		t.Fatalf("expected default weight without max_conns:\n%s", result.Config)
+	}
+}
+
 func sampleModel() *ir.Model {
 	return &ir.Model{
 		Version: 1,

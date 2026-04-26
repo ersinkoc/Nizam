@@ -59,6 +59,29 @@ func TestGenerateHAProxyMissingOptionalReferences(t *testing.T) {
 	}
 }
 
+func TestGenerateHAProxyDefaults(t *testing.T) {
+	model := sampleModel()
+	model.Backends[0].HealthCheckID = "hc_empty"
+	model.Backends[0].Servers = []string{"s_z", "s_a", ""}
+	model.Servers = []ir.Server{
+		{ID: "s_z", Address: "10.0.0.3", Port: 8081},
+		{ID: "s_a", Address: "10.0.0.4", Port: 8082},
+		{ID: "", Address: "10.0.0.5", Port: 8083},
+	}
+	model.HealthChecks = []ir.HealthCheck{{ID: "hc_empty", Type: "http"}}
+	result := Generate(model)
+	for _, want := range []string{
+		"option httpchk GET /",
+		"server s_a 10.0.0.4:8082 weight 100 check",
+		"server s_z 10.0.0.3:8081 weight 100 check",
+		"server  10.0.0.5:8083 weight 100 check",
+	} {
+		if !strings.Contains(result.Config, want) {
+			t.Fatalf("generated config missing %q:\n%s", want, result.Config)
+		}
+	}
+}
+
 func sampleModel() *ir.Model {
 	return &ir.Model{
 		Version: 1,

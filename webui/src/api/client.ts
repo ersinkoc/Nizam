@@ -1,4 +1,17 @@
-import type { AuditEvent, Engine, GenerateResult, IRResponse, Model, ProjectMeta, SnapshotTag, ValidateResult } from '../lib/types';
+import type {
+  AuditEvent,
+  DiffResponse,
+  Engine,
+  GenerateResult,
+  IRResponse,
+  Model,
+  ProjectMeta,
+  SnapshotTag,
+  Cluster,
+  Target,
+  TargetsResponse,
+  ValidateResult
+} from '../lib/types';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -60,5 +73,25 @@ export const api = {
       headers: { 'If-Match': version },
       body: JSON.stringify({ snapshot_ref: snapshotRef })
     }),
-  listAudit: (projectID: string, limit = 100) => request<AuditEvent[]>(`/api/v1/projects/${projectID}/audit?limit=${limit}`)
+  diffSnapshots: (projectID: string, fromHash: string, toHash: string) =>
+    request<DiffResponse>(`/api/v1/projects/${projectID}/ir/diff`, {
+      method: 'POST',
+      body: JSON.stringify({ from_hash: fromHash, to_hash: toHash })
+    }),
+  listAudit: (projectID: string, limit = 100) => request<AuditEvent[]>(`/api/v1/projects/${projectID}/audit?limit=${limit}`),
+  listTargets: (projectID: string) => request<TargetsResponse>(`/api/v1/projects/${projectID}/targets`),
+  upsertTarget: (projectID: string, target: Partial<Target>) =>
+    request<Target>(`/api/v1/projects/${projectID}/targets`, {
+      method: 'POST',
+      body: JSON.stringify(target)
+    }),
+  deleteTarget: (projectID: string, targetID: string) =>
+    request<void>(`/api/v1/projects/${projectID}/targets/${targetID}`, { method: 'DELETE' }),
+  upsertCluster: (projectID: string, cluster: Partial<Cluster>) =>
+    request<Cluster>(`/api/v1/projects/${projectID}/clusters`, {
+      method: 'POST',
+      body: JSON.stringify(cluster)
+    }),
+  deleteCluster: (projectID: string, clusterID: string) =>
+    request<void>(`/api/v1/projects/${projectID}/clusters/${clusterID}`, { method: 'DELETE' })
 };
