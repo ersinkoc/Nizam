@@ -207,7 +207,7 @@ func (s *Store) readTargets(projectID string) (TargetsFile, error) {
 	var targets TargetsFile
 	if err := readJSON(s.targetsPath(projectID), &targets); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			if _, statErr := os.Stat(s.projectDir(projectID)); statErr != nil {
+			if _, statErr := statPath(s.projectDir(projectID)); statErr != nil {
 				return TargetsFile{}, statErr
 			}
 			return TargetsFile{Targets: []Target{}, Clusters: []Cluster{}}, nil

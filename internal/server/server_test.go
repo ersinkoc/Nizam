@@ -56,3 +56,12 @@ func TestEmbeddedUIRootAndDefaultLogger(t *testing.T) {
 		_, _ = io.Copy(io.Discard, res.Body)
 	}
 }
+
+func TestEmbeddedUIMissingDist(t *testing.T) {
+	handler := embeddedUIFromSub(nil, errEmbeddedUIMissing)
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/", nil))
+	if res.Code != http.StatusInternalServerError {
+		t.Fatalf("status=%d", res.Code)
+	}
+}

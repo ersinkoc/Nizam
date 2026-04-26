@@ -2,6 +2,7 @@ package server
 
 import (
 	"embed"
+	"errors"
 	"io/fs"
 	"net/http"
 	"path"
@@ -12,7 +13,15 @@ import (
 var webuiFS embed.FS
 
 func embeddedUI() http.Handler {
-	sub, err := fs.Sub(webuiFS, "dist")
+	return embeddedUIFromFS(webuiFS)
+}
+
+func embeddedUIFromFS(fsys fs.FS) http.Handler {
+	sub, err := fs.Sub(fsys, "dist")
+	return embeddedUIFromSub(sub, err)
+}
+
+func embeddedUIFromSub(sub fs.FS, err error) http.Handler {
 	if err != nil {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "embedded UI missing", http.StatusInternalServerError)
@@ -36,3 +45,5 @@ func embeddedUI() http.Handler {
 		fileServer.ServeHTTP(w, r)
 	})
 }
+
+var errEmbeddedUIMissing = errors.New("embedded UI missing")

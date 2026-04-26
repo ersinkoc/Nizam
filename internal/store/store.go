@@ -55,8 +55,16 @@ var (
 	userHomeDir = os.UserHomeDir
 	mkdirAll    = os.MkdirAll
 	createTemp  = os.CreateTemp
+	openFile    = os.OpenFile
+	openPath    = os.Open
+	readDir     = os.ReadDir
 	renameFile  = os.Rename
+	removeAll   = os.RemoveAll
+	statPath    = os.Stat
 	randRead    = rand.Read
+	tempWrite   = func(tmp *os.File, data []byte) (int, error) { return tmp.Write(data) }
+	tempSync    = func(tmp *os.File) error { return tmp.Sync() }
+	tempClose   = func(tmp *os.File) error { return tmp.Close() }
 )
 
 func DefaultRoot() string {
@@ -87,7 +95,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]ProjectMeta, error) {
 	if err := s.Bootstrap(ctx); err != nil {
 		return nil, err
 	}
-	entries, err := os.ReadDir(filepath.Join(s.root, "projects"))
+	entries, err := readDir(filepath.Join(s.root, "projects"))
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +173,7 @@ func (s *Store) GetProject(ctx context.Context, id string) (ProjectMeta, error) 
 func (s *Store) DeleteProject(ctx context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return os.RemoveAll(s.projectDir(id))
+	return removeAll(s.projectDir(id))
 }
 
 func (s *Store) GetIR(ctx context.Context, id string) (*ir.Model, string, error) {
@@ -184,7 +192,7 @@ func (s *Store) SaveIR(ctx context.Context, id string, model *ir.Model, ifMatch 
 }
 
 func (s *Store) saveIRLocked(id string, model *ir.Model, ifMatch string) (string, error) {
-	if _, err := os.Stat(s.projectDir(id)); err != nil {
+	if _, err := statPath(s.projectDir(id)); err != nil {
 		return "", err
 	}
 	current, currentVersion, err := s.GetIR(context.Background(), id)
@@ -215,7 +223,7 @@ func (s *Store) saveIRLocked(id string, model *ir.Model, ifMatch string) (string
 }
 
 func (s *Store) ListSnapshots(ctx context.Context, id string) ([]string, error) {
-	entries, err := os.ReadDir(filepath.Join(s.projectDir(id), "snapshots"))
+	entries, err := readDir(filepath.Join(s.projectDir(id), "snapshots"))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return []string{}, nil
@@ -237,7 +245,7 @@ func (s *Store) GetSnapshot(ctx context.Context, id, ref string) (*ir.Model, str
 		ref = tagRef
 	}
 	dir := filepath.Join(s.projectDir(id), "snapshots")
-	entries, err := os.ReadDir(dir)
+	entries, err := readDir(dir)
 	if err != nil {
 		return nil, "", err
 	}
@@ -328,7 +336,7 @@ func (s *Store) AppendAudit(ctx context.Context, event AuditEvent) error {
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(s.auditPath(event.ProjectID), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	f, err := openFile(s.auditPath(event.ProjectID), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return err
 	}
@@ -340,7 +348,7 @@ func (s *Store) AppendAudit(ctx context.Context, event AuditEvent) error {
 }
 
 func (s *Store) ListAudit(ctx context.Context, id string, limit int) ([]AuditEvent, error) {
-	f, err := os.Open(s.auditPath(id))
+	f, err := openPath(s.auditPath(id))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return []AuditEvent{}, nil
@@ -428,15 +436,15 @@ func atomicWrite(path string, data []byte) error {
 	}
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
+	if _, err := tempWrite(tmp, data); err != nil {
+		_ = tempClose(tmp)
 		return err
 	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
+	if err := tempSync(tmp); err != nil {
+		_ = tempClose(tmp)
 		return err
 	}
-	if err := tmp.Close(); err != nil {
+	if err := tempClose(tmp); err != nil {
 		return err
 	}
 	return renameFile(tmpName, path)

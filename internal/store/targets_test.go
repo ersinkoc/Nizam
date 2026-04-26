@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -87,6 +88,18 @@ func TestTargetErrors(t *testing.T) {
 	if _, err := st.ListTargets(t.Context(), "missing"); err == nil {
 		t.Fatal("expected missing project error")
 	}
+	if _, err := st.UpsertTarget(t.Context(), "missing", Target{Name: "x", Host: "127.0.0.1"}); err == nil {
+		t.Fatal("expected missing project upsert target error")
+	}
+	if err := st.DeleteTarget(t.Context(), "missing", "target"); err == nil {
+		t.Fatal("expected missing project delete target error")
+	}
+	if _, err := st.UpsertCluster(t.Context(), "missing", Cluster{Name: "cluster"}); err == nil {
+		t.Fatal("expected missing project upsert cluster error")
+	}
+	if err := st.DeleteCluster(t.Context(), "missing", "cluster"); err == nil {
+		t.Fatal("expected missing project delete cluster error")
+	}
 }
 
 func TestTargetDefaultsSortingAndCorruptFile(t *testing.T) {
@@ -148,5 +161,67 @@ func TestTargetDefaultsSortingAndCorruptFile(t *testing.T) {
 	}
 	if _, err := st.ListTargets(t.Context(), meta.ID); err == nil {
 		t.Fatal("expected corrupt targets file error")
+	}
+}
+
+func TestTargetAdditionalErrorBranches(t *testing.T) {
+	st := New(t.TempDir())
+	meta, _, _, err := st.CreateProject(t.Context(), "edge", "", []ir.Engine{ir.EngineHAProxy})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(st.targetsPath(meta.ID), []byte(`{"targets":null,"clusters":null}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	all, err := st.ListTargets(t.Context(), meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if all.Targets == nil || all.Clusters == nil {
+		t.Fatalf("expected nil collections normalized: %+v", all)
+	}
+
+	originalRenameFile := renameFile
+	renameFile = func(string, string) error {
+		return errors.New("rename failed")
+	}
+	if _, err := st.UpsertTarget(t.Context(), meta.ID, Target{Name: "bad-write", Host: "127.0.0.1"}); err == nil {
+		t.Fatal("expected upsert target write error")
+	}
+	renameFile = originalRenameFile
+
+	target, err := st.UpsertTarget(t.Context(), meta.ID, Target{Name: "prod", Host: "127.0.0.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cluster, err := st.UpsertCluster(t.Context(), meta.ID, Cluster{Name: "prod", TargetIDs: []string{target.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteTarget(t.Context(), meta.ID, "missing-with-existing-target"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected missing target with existing collection error, got %v", err)
+	}
+	if err := st.DeleteCluster(t.Context(), meta.ID, "missing-with-existing-cluster"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected missing cluster with existing collection error, got %v", err)
+	}
+	renameFile = func(string, string) error {
+		return errors.New("rename failed")
+	}
+	if err := st.DeleteTarget(t.Context(), meta.ID, target.ID); err == nil {
+		t.Fatal("expected delete target write error")
+	}
+	if _, err := st.UpsertCluster(t.Context(), meta.ID, Cluster{Name: "bad-cluster"}); err == nil {
+		t.Fatal("expected upsert cluster write error")
+	}
+	if err := st.DeleteCluster(t.Context(), meta.ID, cluster.ID); err == nil {
+		t.Fatal("expected delete cluster write error")
+	}
+	renameFile = originalRenameFile
+
+	if err := os.WriteFile(filepath.Join(st.projectDir(meta.ID), "targets.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.readTargets(meta.ID); err != nil {
+		t.Fatal(err)
 	}
 }

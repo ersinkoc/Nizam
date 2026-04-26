@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -396,4 +397,106 @@ func TestStoreInjectedFailureBranches(t *testing.T) {
 	if err := st.AppendAudit(ctx, AuditEvent{ProjectID: meta.ID, Action: "audit", Metadata: map[string]any{"bad": func() {}}}); err == nil {
 		t.Fatal("expected append audit marshal error")
 	}
+}
+
+func TestStoreInjectedOSBranches(t *testing.T) {
+	ctx := context.Background()
+	st := New(t.TempDir())
+	meta, model, version, err := st.CreateProject(ctx, "edge", "", []ir.Engine{ir.EngineHAProxy})
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalReadDir := readDir
+	originalRemoveAll := removeAll
+	originalStatPath := statPath
+	originalOpenFile := openFile
+	originalOpenPath := openPath
+	originalTempWrite := tempWrite
+	originalTempSync := tempSync
+	originalTempClose := tempClose
+	t.Cleanup(func() {
+		readDir = originalReadDir
+		removeAll = originalRemoveAll
+		statPath = originalStatPath
+		openFile = originalOpenFile
+		openPath = originalOpenPath
+		tempWrite = originalTempWrite
+		tempSync = originalTempSync
+		tempClose = originalTempClose
+	})
+
+	readDir = func(string) ([]fs.DirEntry, error) {
+		return nil, errors.New("readdir failed")
+	}
+	if _, err := st.ListProjects(ctx); err == nil {
+		t.Fatal("expected list projects readdir error")
+	}
+	if _, err := st.ListSnapshots(ctx, meta.ID); err == nil {
+		t.Fatal("expected list snapshots readdir error")
+	}
+	if _, _, err := st.GetSnapshot(ctx, meta.ID, "missing"); err == nil {
+		t.Fatal("expected get snapshot readdir error")
+	}
+	readDir = originalReadDir
+
+	removeAll = func(string) error {
+		return errors.New("remove failed")
+	}
+	if err := st.DeleteProject(ctx, meta.ID); err == nil {
+		t.Fatal("expected delete project remove error")
+	}
+	removeAll = originalRemoveAll
+
+	statPath = func(string) (os.FileInfo, error) {
+		return nil, errors.New("stat failed")
+	}
+	if _, err := st.SaveIR(ctx, meta.ID, model, version); err == nil {
+		t.Fatal("expected save stat error")
+	}
+	if _, err := st.ListTargets(ctx, meta.ID); err == nil {
+		t.Fatal("expected targets stat error")
+	}
+	statPath = originalStatPath
+
+	openFile = func(string, int, os.FileMode) (*os.File, error) {
+		return nil, errors.New("openfile failed")
+	}
+	if err := st.AppendAudit(ctx, AuditEvent{ProjectID: meta.ID, Action: "audit"}); err == nil {
+		t.Fatal("expected append audit openfile error")
+	}
+	openFile = originalOpenFile
+
+	openPath = func(string) (*os.File, error) {
+		return nil, errors.New("open failed")
+	}
+	if _, err := st.ListAudit(ctx, meta.ID, 0); err == nil {
+		t.Fatal("expected list audit open error")
+	}
+	openPath = originalOpenPath
+
+	path := filepath.Join(t.TempDir(), "atomic.json")
+	tempWrite = func(*os.File, []byte) (int, error) {
+		return 0, errors.New("write failed")
+	}
+	if err := atomicWrite(path, []byte("{}")); err == nil {
+		t.Fatal("expected atomic write data error")
+	}
+	tempWrite = originalTempWrite
+
+	tempSync = func(*os.File) error {
+		return errors.New("sync failed")
+	}
+	if err := atomicWrite(path, []byte("{}")); err == nil {
+		t.Fatal("expected atomic write sync error")
+	}
+	tempSync = originalTempSync
+
+	tempClose = func(tmp *os.File) error {
+		_ = tmp.Close()
+		return errors.New("close failed")
+	}
+	if err := atomicWrite(path, []byte("{}")); err == nil {
+		t.Fatal("expected atomic write close error")
+	}
+	tempClose = originalTempClose
 }
