@@ -18,6 +18,7 @@ The current codebase is a working product foundation with backend statement cove
 - Deployment targets and clusters persisted in `targets.json`
 - Deployment dry-run planning for single targets or clusters via generated rollout steps
 - Monitor snapshots for registered targets through API, CLI, and WebUI
+- Monitor SSE stream endpoint for repeated target health snapshots
 - HAProxy monitor endpoint support for `show stat` CSV health summaries
 - Nginx monitor endpoint support for OSS `stub_status` connection summaries
 - Topology canvas with drag/connect gestures that update the IR

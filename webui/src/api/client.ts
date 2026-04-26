@@ -101,5 +101,6 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body)
     }),
-  monitorSnapshot: (projectID: string) => request<MonitorSnapshot>(`/api/v1/projects/${projectID}/monitor/snapshot`)
+  monitorSnapshot: (projectID: string) => request<MonitorSnapshot>(`/api/v1/projects/${projectID}/monitor/snapshot`),
+  monitorStreamURL: (projectID: string) => `/api/v1/projects/${projectID}/monitor/stream`
 };

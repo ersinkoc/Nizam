@@ -18,8 +18,9 @@ flowchart LR
   MonitorBase["Monitor Snapshot\nTarget health contract\nAPI + CLI + WebUI"]:::done
   HAProxyMonitor["HAProxy Monitor\nshow stat CSV parser\nhealth summary"]:::done
   NginxMonitor["Nginx Monitor\nstub_status parser\nconnection summary"]:::done
+  MonitorStream["Monitor Stream\nSSE snapshot events\ninterval + limit controls"]:::done
   Deploy["SSH Deploy\nNot implemented yet"]:::todo
-  Monitor["Live Streams\nNot implemented yet"]:::todo
+  ProjectStream["Project Event Streams\nNot implemented yet"]:::todo
 
   Foundation --> IR --> Import --> Generate --> Validate
   IR --> Topology
@@ -31,8 +32,9 @@ flowchart LR
   Targets --> MonitorBase
   MonitorBase --> HAProxyMonitor
   MonitorBase --> NginxMonitor
-  HAProxyMonitor --> Monitor
-  NginxMonitor --> Monitor
+  HAProxyMonitor --> MonitorStream
+  NginxMonitor --> MonitorStream
+  MonitorStream --> ProjectStream
 
   classDef done fill:#dff7ea,stroke:#2b8a57,color:#153b27;
   classDef todo fill:#fff3cd,stroke:#a36b00,color:#4a3100;
@@ -320,6 +322,7 @@ flowchart LR
   NginxParser["ParseNginxStubStatus\nconnection counters"]
   Summary["Summary\nhealthy / warning / failed"]
   API["GET /monitor/snapshot"]
+  Stream["GET /monitor/stream\ntext/event-stream"]
   CLI["mizan monitor snapshot"]
   UI["WebUI Monitor panel"]
 
@@ -332,6 +335,7 @@ flowchart LR
   NginxParser --> Summary
   Summary --> Monitor
   Monitor --> API
+  Monitor --> Stream
   Monitor --> CLI
   API --> UI
 ```
@@ -340,7 +344,7 @@ The monitoring layer exposes a stable snapshot contract for registered targets. 
 
 Nginx targets can provide a `monitor_endpoint` that returns OSS `stub_status` text. Mizan parses active connections, accepted/handled/request counters, and reading/writing/waiting gauges. Parsed Nginx snapshots are `healthy` unless accepted connections exceed handled connections, which is surfaced as `warning`.
 
-Targets without a monitor endpoint return `unknown`, which keeps the API, CLI, and WebUI behavior predictable while richer collectors and streaming are added.
+Targets without a monitor endpoint return `unknown`, which keeps the API, CLI, and WebUI behavior predictable. The same snapshot contract is also exposed as an SSE stream at `/api/v1/projects/{id}/monitor/stream`; it emits `snapshot` events immediately and then on an interval, with test-friendly `limit` and `interval` query controls.
 
 ## Topology Editing
 
@@ -547,6 +551,7 @@ mindmap
       snapshot API
       CLI snapshot
       WebUI panel
+      SSE stream endpoint
       HAProxy show stat CSV
       Nginx stub_status
       unknown collector state
@@ -591,7 +596,7 @@ flowchart LR
   SSH["SSH deployment"]
   Rollout["Cluster rollout orchestration"]
   Secrets["Encrypted secrets vault"]
-  Monitor["Monitor SSE streams"]
+  ProjectStream["Project SSE streams"]
   SSE["SSE project/monitor streams"]
   FullParser["Full round-trip parsers"]
   Wizard["Full wizard UI"]
@@ -599,12 +604,12 @@ flowchart LR
 
   SSH --> Rollout
   Secrets --> SSH
-  Monitor --> SSE
+  ProjectStream --> SSE
   FullParser --> Wizard
   DiffUI --> Wizard
 ```
 
-The codebase is now a working product foundation, not yet a full v1 implementation. Target and cluster persistence plus dry-run deployment planning exist, and HAProxy/Nginx monitor snapshots can be collected from HTTP endpoints. Real SSH execution, credential handling, staged rollout safety gates, monitor streams, full parser round-trip, richer wizard editing, and deeper diff UI are still future work.
+The codebase is now a working product foundation, not yet a full v1 implementation. Target and cluster persistence plus dry-run deployment planning exist, HAProxy/Nginx monitor snapshots can be collected from HTTP endpoints, and monitor snapshots can be streamed over SSE. Real SSH execution, credential handling, staged rollout safety gates, project event streams, full parser round-trip, richer wizard editing, and deeper diff UI are still future work.
 
 ## Design Principles
 

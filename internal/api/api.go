@@ -3,8 +3,10 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/mizanproxy/mizan/internal/deploy"
 	"github.com/mizanproxy/mizan/internal/ir"
@@ -25,6 +27,9 @@ var (
 	}
 	listSnapshotsFromStore = func(st *store.Store, r *http.Request, id string) ([]string, error) {
 		return st.ListSnapshots(r.Context(), id)
+	}
+	monitorSnapshotFromStore = func(st *store.Store, r *http.Request, id string) (monitor.Snapshot, error) {
+		return monitor.SnapshotTargets(r.Context(), st, id, nil)
 	}
 )
 
@@ -50,6 +55,7 @@ func Register(mux *http.ServeMux, st *store.Store) {
 	mux.HandleFunc("POST /api/v1/projects/{id}/validate", h.validate)
 	mux.HandleFunc("POST /api/v1/projects/{id}/deploy", h.deploy)
 	mux.HandleFunc("GET /api/v1/projects/{id}/monitor/snapshot", h.monitorSnapshot)
+	mux.HandleFunc("GET /api/v1/projects/{id}/monitor/stream", h.monitorStream)
 	mux.HandleFunc("GET /api/v1/projects/{id}/audit", h.listAudit)
 	mux.HandleFunc("GET /api/v1/projects/{id}/targets", h.listTargets)
 	mux.HandleFunc("POST /api/v1/projects/{id}/targets", h.upsertTarget)
@@ -403,12 +409,72 @@ func (h *Handler) deploy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) monitorSnapshot(w http.ResponseWriter, r *http.Request) {
-	snapshot, err := monitor.SnapshotTargets(r.Context(), h.store, r.PathValue("id"), nil)
+	snapshot, err := monitorSnapshotFromStore(h.store, r, r.PathValue("id"))
 	if err != nil {
 		writeProblem(w, http.StatusNotFound, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, snapshot)
+}
+
+func (h *Handler) monitorStream(w http.ResponseWriter, r *http.Request) {
+	projectID := r.PathValue("id")
+	first, err := monitorSnapshotFromStore(h.store, r, projectID)
+	if err != nil {
+		writeProblem(w, http.StatusNotFound, err)
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeProblem(w, http.StatusInternalServerError, errors.New("streaming is not supported"))
+		return
+	}
+	limit := 0
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	interval := 5 * time.Second
+	if raw := r.URL.Query().Get("interval"); raw != "" {
+		if parsed, err := time.ParseDuration(raw); err == nil && parsed > 0 {
+			interval = parsed
+		}
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	if !writeSSE(w, "snapshot", first) {
+		return
+	}
+	flusher.Flush()
+	sent := 1
+	if limit > 0 && sent >= limit {
+		return
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			snapshot, err := monitorSnapshotFromStore(h.store, r, projectID)
+			if err != nil {
+				_ = writeSSE(w, "error", map[string]string{"error": err.Error()})
+				flusher.Flush()
+				return
+			}
+			if !writeSSE(w, "snapshot", snapshot) {
+				return
+			}
+			flusher.Flush()
+			sent++
+			if limit > 0 && sent >= limit {
+				return
+			}
+		}
+	}
 }
 
 func (h *Handler) listAudit(w http.ResponseWriter, r *http.Request) {
@@ -535,4 +601,13 @@ func writeProblem(w http.ResponseWriter, status int, err error) {
 		"status": status,
 		"detail": err.Error(),
 	})
+}
+
+func writeSSE(w http.ResponseWriter, event string, value any) bool {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return false
+	}
+	_, err = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, data)
+	return err == nil
 }

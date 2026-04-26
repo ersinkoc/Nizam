@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/mizanproxy/mizan/internal/ir"
+	"github.com/mizanproxy/mizan/internal/monitor"
 	"github.com/mizanproxy/mizan/internal/store"
 )
 
@@ -57,6 +59,7 @@ func TestProjectLifecycleEndpoints(t *testing.T) {
 		{http.MethodGet, "/api/v1/projects/" + id + "/ir/tags", http.StatusOK},
 		{http.MethodGet, "/api/v1/projects/" + id + "/audit", http.StatusOK},
 		{http.MethodGet, "/api/v1/projects/" + id + "/monitor/snapshot", http.StatusOK},
+		{http.MethodGet, "/api/v1/projects/" + id + "/monitor/stream?limit=1", http.StatusOK},
 	} {
 		res = doJSON(mux, tc.method, tc.path, nil)
 		if res.Code != tc.status {
@@ -157,6 +160,108 @@ func TestProjectLifecycleEndpoints(t *testing.T) {
 	res = doJSON(mux, http.MethodDelete, "/api/v1/projects/"+id, nil)
 	if res.Code != http.StatusNoContent {
 		t.Fatalf("delete status=%d body=%s", res.Code, res.Body.String())
+	}
+}
+
+func TestMonitorStreamEndpoint(t *testing.T) {
+	st := store.New(t.TempDir())
+	mux := http.NewServeMux()
+	Register(mux, st)
+	res := doJSON(mux, http.MethodPost, "/api/v1/projects", map[string]any{"name": "edge", "engines": []string{"haproxy"}})
+	if res.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", res.Code, res.Body.String())
+	}
+	var created struct {
+		Project struct {
+			ID string `json:"id"`
+		} `json:"project"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/v1/projects/" + created.Project.ID + "/monitor/stream?limit=2&interval=1ms"
+	res = doJSON(mux, http.MethodGet, path, nil)
+	if res.Code != http.StatusOK {
+		t.Fatalf("stream status=%d body=%s", res.Code, res.Body.String())
+	}
+	if got := strings.Count(res.Body.String(), "event: snapshot"); got != 2 {
+		t.Fatalf("expected 2 snapshot events, got %d body=%s", got, res.Body.String())
+	}
+	if ct := res.Header().Get("Content-Type"); ct != "text/event-stream" {
+		t.Fatalf("content-type=%q", ct)
+	}
+}
+
+func TestMonitorStreamBranches(t *testing.T) {
+	st := store.New(t.TempDir())
+	mux := http.NewServeMux()
+	Register(mux, st)
+	if res := doJSON(mux, http.MethodGet, "/api/v1/projects/missing/monitor/stream", nil); res.Code != http.StatusNotFound {
+		t.Fatalf("missing stream status=%d body=%s", res.Code, res.Body.String())
+	}
+	res := doJSON(mux, http.MethodPost, "/api/v1/projects", map[string]any{"name": "edge", "engines": []string{"haproxy"}})
+	if res.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", res.Code, res.Body.String())
+	}
+	var created struct {
+		Project struct {
+			ID string `json:"id"`
+		} `json:"project"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+created.Project.ID+"/monitor/stream", nil)
+	req.SetPathValue("id", created.Project.ID)
+	h := &Handler{store: st}
+	plain := &plainResponse{header: http.Header{}}
+	h.monitorStream(plain, req)
+	if plain.status != http.StatusInternalServerError || !bytes.Contains(plain.body.Bytes(), []byte("streaming is not supported")) {
+		t.Fatalf("plain response status=%d body=%s", plain.status, plain.body.String())
+	}
+
+	oldMonitorSnapshot := monitorSnapshotFromStore
+	t.Cleanup(func() { monitorSnapshotFromStore = oldMonitorSnapshot })
+	calls := 0
+	monitorSnapshotFromStore = func(*store.Store, *http.Request, string) (monitor.Snapshot, error) {
+		calls++
+		if calls == 2 {
+			return monitor.Snapshot{}, errors.New("stream failed")
+		}
+		return monitor.Snapshot{ProjectID: created.Project.ID}, nil
+	}
+	res = doJSON(mux, http.MethodGet, "/api/v1/projects/"+created.Project.ID+"/monitor/stream?limit=3&interval=1ms", nil)
+	if res.Code != http.StatusOK || !bytes.Contains(res.Body.Bytes(), []byte("event: error")) {
+		t.Fatalf("stream error status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	monitorSnapshotFromStore = func(*store.Store, *http.Request, string) (monitor.Snapshot, error) {
+		return monitor.Snapshot{ProjectID: created.Project.ID}, nil
+	}
+	firstWriteFailure := &flusherResponse{header: http.Header{}, failAt: 0}
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+created.Project.ID+"/monitor/stream", nil)
+	req.SetPathValue("id", created.Project.ID)
+	h.monitorStream(firstWriteFailure, req)
+	if firstWriteFailure.body.Len() != 0 {
+		t.Fatalf("expected no stream body after first write failure: %s", firstWriteFailure.body.String())
+	}
+
+	secondWriteFailure := &flusherResponse{header: http.Header{}, failAt: 1}
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+created.Project.ID+"/monitor/stream?limit=2&interval=1ms", nil)
+	req.SetPathValue("id", created.Project.ID)
+	h.monitorStream(secondWriteFailure, req)
+	if strings.Count(secondWriteFailure.body.String(), "event: snapshot") != 1 {
+		t.Fatalf("expected one written event before second failure: %s", secondWriteFailure.body.String())
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+created.Project.ID+"/monitor/stream?limit=bad&interval=bad", nil).WithContext(ctx)
+	req.SetPathValue("id", created.Project.ID)
+	canceled := &flusherResponse{header: http.Header{}, failAt: -1}
+	h.monitorStream(canceled, req)
+	if !strings.Contains(canceled.body.String(), "event: snapshot") {
+		t.Fatalf("expected initial snapshot before canceled context return: %s", canceled.body.String())
 	}
 }
 
@@ -543,6 +648,12 @@ func TestAPIHelpers(t *testing.T) {
 	}
 	h := &Handler{}
 	h.audit(req, "", "noop", "", "", "success", "", nil)
+	if writeSSE(errorWriter{}, "snapshot", map[string]string{"ok": "true"}) {
+		t.Fatal("expected writeSSE writer failure")
+	}
+	if writeSSE(httptest.NewRecorder(), "bad", func() {}) {
+		t.Fatal("expected writeSSE marshal failure")
+	}
 }
 
 func doJSON(mux http.Handler, method, path string, body any) *httptest.ResponseRecorder {
@@ -570,4 +681,64 @@ func doPossiblyRawJSON(mux http.Handler, method, path string, body any, headers 
 	res := httptest.NewRecorder()
 	mux.ServeHTTP(res, req)
 	return res
+}
+
+type plainResponse struct {
+	header http.Header
+	body   bytes.Buffer
+	status int
+}
+
+func (r *plainResponse) Header() http.Header {
+	return r.header
+}
+
+func (r *plainResponse) Write(data []byte) (int, error) {
+	return r.body.Write(data)
+}
+
+func (r *plainResponse) WriteHeader(status int) {
+	r.status = status
+}
+
+type errorWriter struct{}
+
+func (errorWriter) Header() http.Header {
+	return http.Header{}
+}
+
+func (errorWriter) Write([]byte) (int, error) {
+	return 0, errors.New("write failed")
+}
+
+func (errorWriter) WriteHeader(int) {}
+
+type flusherResponse struct {
+	header  http.Header
+	body    bytes.Buffer
+	status  int
+	failAt  int
+	writes  int
+	flushed bool
+}
+
+func (r *flusherResponse) Header() http.Header {
+	return r.header
+}
+
+func (r *flusherResponse) Write(data []byte) (int, error) {
+	if r.failAt >= 0 && r.writes == r.failAt {
+		r.writes++
+		return 0, errors.New("write failed")
+	}
+	r.writes++
+	return r.body.Write(data)
+}
+
+func (r *flusherResponse) WriteHeader(status int) {
+	r.status = status
+}
+
+func (r *flusherResponse) Flush() {
+	r.flushed = true
 }
