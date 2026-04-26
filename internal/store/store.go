@@ -51,6 +51,16 @@ type AuditEvent struct {
 	Metadata       map[string]any `json:"metadata,omitempty"`
 }
 
+type AuditFilter struct {
+	Limit        int
+	From         time.Time
+	To           time.Time
+	Actor        string
+	Action       string
+	Outcome      string
+	TargetEngine ir.Engine
+}
+
 var (
 	userHomeDir = os.UserHomeDir
 	mkdirAll    = os.MkdirAll
@@ -348,6 +358,10 @@ func (s *Store) AppendAudit(ctx context.Context, event AuditEvent) error {
 }
 
 func (s *Store) ListAudit(ctx context.Context, id string, limit int) ([]AuditEvent, error) {
+	return s.ListAuditFiltered(ctx, id, AuditFilter{Limit: limit})
+}
+
+func (s *Store) ListAuditFiltered(ctx context.Context, id string, filter AuditFilter) ([]AuditEvent, error) {
 	f, err := openPath(s.auditPath(id))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -360,7 +374,7 @@ func (s *Store) ListAudit(ctx context.Context, id string, limit int) ([]AuditEve
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		var event AuditEvent
-		if err := json.Unmarshal(scanner.Bytes(), &event); err == nil {
+		if err := json.Unmarshal(scanner.Bytes(), &event); err == nil && matchesAuditFilter(event, filter) {
 			events = append(events, event)
 		}
 	}
@@ -368,10 +382,32 @@ func (s *Store) ListAudit(ctx context.Context, id string, limit int) ([]AuditEve
 		return nil, err
 	}
 	sort.Slice(events, func(i, j int) bool { return events[i].Timestamp.After(events[j].Timestamp) })
-	if limit > 0 && len(events) > limit {
-		events = events[:limit]
+	if filter.Limit > 0 && len(events) > filter.Limit {
+		events = events[:filter.Limit]
 	}
 	return events, nil
+}
+
+func matchesAuditFilter(event AuditEvent, filter AuditFilter) bool {
+	if !filter.From.IsZero() && event.Timestamp.Before(filter.From) {
+		return false
+	}
+	if !filter.To.IsZero() && event.Timestamp.After(filter.To) {
+		return false
+	}
+	if filter.Actor != "" && !strings.EqualFold(event.Actor, filter.Actor) {
+		return false
+	}
+	if filter.Action != "" && event.Action != filter.Action {
+		return false
+	}
+	if filter.Outcome != "" && event.Outcome != filter.Outcome {
+		return false
+	}
+	if filter.TargetEngine != "" && event.TargetEngine != filter.TargetEngine {
+		return false
+	}
+	return true
 }
 
 func (s *Store) writeSnapshot(id, hash string, model *ir.Model) error {

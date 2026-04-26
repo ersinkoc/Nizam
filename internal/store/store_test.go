@@ -68,6 +68,37 @@ func TestAuditAppendAndList(t *testing.T) {
 	if events[0].Action != "ir.patch" || events[0].Actor != "test" {
 		t.Fatalf("unexpected event: %+v", events[0])
 	}
+	base := time.Date(2026, 4, 26, 10, 0, 0, 0, time.UTC)
+	for _, event := range []AuditEvent{
+		{ProjectID: meta.ID, Actor: "Alice", Action: "config.generate", Outcome: "success", TargetEngine: ir.EngineHAProxy, Timestamp: base},
+		{ProjectID: meta.ID, Actor: "Bob", Action: "target.probe", Outcome: "failed", TargetEngine: ir.EngineNginx, Timestamp: base.Add(time.Hour)},
+		{ProjectID: meta.ID, Actor: "Alice", Action: "target.probe", Outcome: "success", TargetEngine: ir.EngineNginx, Timestamp: base.Add(2 * time.Hour)},
+	} {
+		if err := st.AppendAudit(ctx, event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		name   string
+		filter AuditFilter
+		want   string
+	}{
+		{"from", AuditFilter{From: base.Add(30 * time.Minute)}, "target.probe"},
+		{"to", AuditFilter{To: base.Add(30 * time.Minute)}, "config.generate"},
+		{"actor", AuditFilter{Actor: "alice", Limit: 1}, "target.probe"},
+		{"action", AuditFilter{Action: "config.generate"}, "config.generate"},
+		{"outcome", AuditFilter{Outcome: "failed"}, "target.probe"},
+		{"target", AuditFilter{TargetEngine: ir.EngineHAProxy}, "config.generate"},
+		{"all", AuditFilter{Actor: "bob", Action: "target.probe", Outcome: "failed", TargetEngine: ir.EngineNginx, From: base.Add(30 * time.Minute), To: base.Add(90 * time.Minute)}, "target.probe"},
+	} {
+		events, err := st.ListAuditFiltered(ctx, meta.ID, tc.filter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(events) == 0 || events[0].Action != tc.want {
+			t.Fatalf("%s events=%+v", tc.name, events)
+		}
+	}
 }
 
 func TestStoreProjectImportListDeleteAndConflicts(t *testing.T) {

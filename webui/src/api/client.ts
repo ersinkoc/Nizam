@@ -1,5 +1,6 @@
 import type {
   AuditEvent,
+  AuditFilters,
   DiffResponse,
   DeployResult,
   Engine,
@@ -81,7 +82,17 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ from_hash: fromHash, to_hash: toHash })
     }),
-  listAudit: (projectID: string, limit = 100) => request<AuditEvent[]>(`/api/v1/projects/${projectID}/audit?limit=${limit}`),
+  listAudit: (projectID: string, filters: AuditFilters = { limit: 100 }) => {
+    const params = new URLSearchParams();
+    params.set('limit', String(filters.limit ?? 100));
+    if (filters.from) params.set('from', new Date(filters.from).toISOString());
+    if (filters.to) params.set('to', new Date(filters.to).toISOString());
+    if (filters.actor) params.set('actor', filters.actor);
+    if (filters.action) params.set('action', filters.action);
+    if (filters.outcome) params.set('outcome', filters.outcome);
+    if (filters.target_engine) params.set('target_engine', filters.target_engine);
+    return request<AuditEvent[]>(`/api/v1/projects/${projectID}/audit?${params.toString()}`);
+  },
   listTargets: (projectID: string) => request<TargetsResponse>(`/api/v1/projects/${projectID}/targets`),
   upsertTarget: (projectID: string, target: Partial<Target>) =>
     request<Target>(`/api/v1/projects/${projectID}/targets`, {

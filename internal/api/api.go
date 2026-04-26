@@ -31,8 +31,8 @@ var (
 	monitorSnapshotFromStore = func(st *store.Store, r *http.Request, id string) (monitor.Snapshot, error) {
 		return monitor.SnapshotTargets(r.Context(), st, id, nil)
 	}
-	auditEventsFromStore = func(st *store.Store, r *http.Request, id string, limit int) ([]store.AuditEvent, error) {
-		return st.ListAudit(r.Context(), id, limit)
+	auditEventsFromStore = func(st *store.Store, r *http.Request, id string, filter store.AuditFilter) ([]store.AuditEvent, error) {
+		return st.ListAuditFiltered(r.Context(), id, filter)
 	}
 )
 
@@ -500,7 +500,7 @@ func (h *Handler) projectEvents(w http.ResponseWriter, r *http.Request) {
 	seen := map[string]bool{}
 	sent := 0
 	emit := func() (bool, error) {
-		events, err := auditEventsFromStore(h.store, r, projectID, 100)
+		events, err := auditEventsFromStore(h.store, r, projectID, store.AuditFilter{Limit: 100})
 		if err != nil {
 			_ = writeSSE(w, "error", map[string]string{"error": err.Error()})
 			flusher.Flush()
@@ -543,18 +543,54 @@ func (h *Handler) projectEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listAudit(w http.ResponseWriter, r *http.Request) {
-	limit := 100
-	if raw := r.URL.Query().Get("limit"); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
-			limit = parsed
-		}
+	filter, err := auditFilterFromRequest(r)
+	if err != nil {
+		writeProblem(w, http.StatusBadRequest, err)
+		return
 	}
-	events, err := auditEventsFromStore(h.store, r, r.PathValue("id"), limit)
+	events, err := auditEventsFromStore(h.store, r, r.PathValue("id"), filter)
 	if err != nil {
 		writeProblem(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, events)
+}
+
+func auditFilterFromRequest(r *http.Request) (store.AuditFilter, error) {
+	q := r.URL.Query()
+	filter := store.AuditFilter{Limit: 100}
+	if raw := q.Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 {
+			return filter, fmt.Errorf("invalid audit limit %q", raw)
+		}
+		filter.Limit = parsed
+	}
+	if raw := q.Get("from"); raw != "" {
+		parsed, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return filter, fmt.Errorf("invalid audit from timestamp %q", raw)
+		}
+		filter.From = parsed
+	}
+	if raw := q.Get("to"); raw != "" {
+		parsed, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return filter, fmt.Errorf("invalid audit to timestamp %q", raw)
+		}
+		filter.To = parsed
+	}
+	filter.Actor = q.Get("actor")
+	filter.Action = q.Get("action")
+	filter.Outcome = q.Get("outcome")
+	if raw := q.Get("target_engine"); raw != "" {
+		engine := ir.Engine(raw)
+		if engine != ir.EngineHAProxy && engine != ir.EngineNginx {
+			return filter, fmt.Errorf("invalid audit target engine %q", raw)
+		}
+		filter.TargetEngine = engine
+	}
+	return filter, nil
 }
 
 func (h *Handler) listTargets(w http.ResponseWriter, r *http.Request) {

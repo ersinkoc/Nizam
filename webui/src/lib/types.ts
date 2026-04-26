@@ -143,6 +143,16 @@ export interface AuditEvent {
   metadata?: Record<string, unknown>;
 }
 
+export interface AuditFilters {
+  limit?: number;
+  from?: string;
+  to?: string;
+  actor?: string;
+  action?: string;
+  outcome?: string;
+  target_engine?: Engine | '';
+}
+
 export interface DiffChange {
   kind: 'added' | 'removed' | 'modified';
   entity_type: string;

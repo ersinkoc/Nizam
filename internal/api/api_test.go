@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mizanproxy/mizan/internal/ir"
 	"github.com/mizanproxy/mizan/internal/monitor"
@@ -282,7 +283,7 @@ func TestProjectEventsBranches(t *testing.T) {
 
 	oldAuditEvents := auditEventsFromStore
 	t.Cleanup(func() { auditEventsFromStore = oldAuditEvents })
-	auditEventsFromStore = func(*store.Store, *http.Request, string, int) ([]store.AuditEvent, error) {
+	auditEventsFromStore = func(*store.Store, *http.Request, string, store.AuditFilter) ([]store.AuditEvent, error) {
 		return nil, errors.New("audit failed")
 	}
 	res := doJSON(mux, http.MethodGet, "/api/v1/projects/"+meta.ID+"/events?limit=1", nil)
@@ -290,7 +291,7 @@ func TestProjectEventsBranches(t *testing.T) {
 		t.Fatalf("events error status=%d body=%s", res.Code, res.Body.String())
 	}
 
-	auditEventsFromStore = func(*store.Store, *http.Request, string, int) ([]store.AuditEvent, error) {
+	auditEventsFromStore = func(*store.Store, *http.Request, string, store.AuditFilter) ([]store.AuditEvent, error) {
 		return []store.AuditEvent{{EventID: "e_1", ProjectID: meta.ID, Action: "test", Outcome: "success"}}, nil
 	}
 	firstWriteFailure := &flusherResponse{header: http.Header{}, failAt: 0}
@@ -311,7 +312,7 @@ func TestProjectEventsBranches(t *testing.T) {
 		t.Fatalf("expected initial audit before canceled context return: %s", canceled.body.String())
 	}
 
-	auditEventsFromStore = func(*store.Store, *http.Request, string, int) ([]store.AuditEvent, error) {
+	auditEventsFromStore = func(*store.Store, *http.Request, string, store.AuditFilter) ([]store.AuditEvent, error) {
 		return []store.AuditEvent{
 			{EventID: "e_dup", ProjectID: meta.ID, Action: "duplicate", Outcome: "success"},
 			{EventID: "e_dup", ProjectID: meta.ID, Action: "duplicate", Outcome: "success"},
@@ -328,7 +329,7 @@ func TestProjectEventsBranches(t *testing.T) {
 	}
 
 	calls := 0
-	auditEventsFromStore = func(*store.Store, *http.Request, string, int) ([]store.AuditEvent, error) {
+	auditEventsFromStore = func(*store.Store, *http.Request, string, store.AuditFilter) ([]store.AuditEvent, error) {
 		calls++
 		if calls == 1 {
 			return nil, nil
@@ -491,6 +492,41 @@ backend be_app
 	}
 	if !bytes.Contains(res.Body.Bytes(), []byte("project.import")) || !bytes.Contains(res.Body.Bytes(), []byte("config.generate")) {
 		t.Fatalf("audit missing expected actions: %s", res.Body.String())
+	}
+}
+
+func TestAuditFilterEndpoint(t *testing.T) {
+	st := store.New(t.TempDir())
+	mux := http.NewServeMux()
+	Register(mux, st)
+	meta, _, _, err := st.CreateProject(t.Context(), "edge", "", []ir.Engine{ir.EngineHAProxy, ir.EngineNginx})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2026, 4, 26, 10, 0, 0, 0, time.UTC)
+	for _, event := range []store.AuditEvent{
+		{ProjectID: meta.ID, Actor: "alice", Action: "config.generate", Outcome: "success", TargetEngine: ir.EngineHAProxy, Timestamp: base},
+		{ProjectID: meta.ID, Actor: "bob", Action: "target.probe", Outcome: "failed", TargetEngine: ir.EngineNginx, Timestamp: base.Add(time.Hour)},
+	} {
+		if err := st.AppendAudit(t.Context(), event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := "/api/v1/projects/" + meta.ID + "/audit?limit=1&from=" + base.Add(30*time.Minute).Format(time.RFC3339) + "&to=" + base.Add(90*time.Minute).Format(time.RFC3339) + "&actor=bob&action=target.probe&outcome=failed&target_engine=nginx"
+	res := doJSON(mux, http.MethodGet, path, nil)
+	if res.Code != http.StatusOK || !bytes.Contains(res.Body.Bytes(), []byte("target.probe")) || bytes.Contains(res.Body.Bytes(), []byte("config.generate")) {
+		t.Fatalf("filtered audit status=%d body=%s", res.Code, res.Body.String())
+	}
+	for _, path := range []string{
+		"/api/v1/projects/" + meta.ID + "/audit?limit=bad",
+		"/api/v1/projects/" + meta.ID + "/audit?limit=0",
+		"/api/v1/projects/" + meta.ID + "/audit?from=bad",
+		"/api/v1/projects/" + meta.ID + "/audit?to=bad",
+		"/api/v1/projects/" + meta.ID + "/audit?target_engine=bad",
+	} {
+		if res := doJSON(mux, http.MethodGet, path, nil); res.Code != http.StatusBadRequest {
+			t.Fatalf("%s status=%d body=%s", path, res.Code, res.Body.String())
+		}
 	}
 }
 

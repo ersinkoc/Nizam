@@ -12,7 +12,7 @@ flowchart LR
   Generate["Generate\nHAProxy + Nginx translators"]:::done
   Validate["Validate\nStructural + native binary wrapper"]:::done
   Topology["Topology\nReact Flow graph\nDrag/connect updates IR"]:::done
-  Audit["Audit\nAppend-only audit.jsonl\nWebUI panel"]:::done
+  Audit["Audit\nAppend-only audit.jsonl\nFiltered WebUI panel"]:::done
   AuditStream["Audit Stream\nSSE audit events\nWebUI live panel"]:::done
   Targets["Target Registry\nTargets + clusters\nWebUI panel"]:::done
   TargetProbe["Target Probe\nHTTP endpoint test\nAPI + WebUI"]:::done
@@ -438,6 +438,7 @@ sequenceDiagram
   API->>Audit: append ir.patch
   EventStream->>Audit: poll recent events
   EventStream-->>API: SSE audit event
+  API->>Audit: list filtered by actor/action/outcome/engine/time
 
   API->>Store: TagSnapshot(ref, label)
   Store->>Tags: upsert label -> ref
@@ -461,6 +462,7 @@ flowchart LR
   Snapshots["Snapshots panel"]
   Targets["Targets / clusters panel"]
   Audit["Audit panel"]
+  AuditFilters["Audit filters\nactor/action/outcome/engine"]
   EventStream["Project event stream"]
 
   APIClient --> App
@@ -470,6 +472,8 @@ flowchart LR
   App --> Snapshots
   App --> Targets
   App --> Audit
+  App --> AuditFilters
+  AuditFilters --> APIClient
   APIClient --> EventStream
   EventStream --> Audit
   Topology -->|move/connect| App
@@ -559,6 +563,7 @@ mindmap
       tags
       audit.jsonl
       audit SSE stream
+      audit filters
       targets.json
     Deployment
       dry-run plan

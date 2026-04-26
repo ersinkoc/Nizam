@@ -19,12 +19,13 @@ import {
   TriangleAlert,
   UploadCloud
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api/client';
 import { TopologyCanvas } from './components/topology/TopologyCanvas';
 import { connectEntities, moveEntity } from './lib/ir-mutations';
 import type {
   AuditEvent,
+  AuditFilters,
   DeployResult,
   DiffChange,
   Engine,
@@ -106,6 +107,13 @@ const samplePatch = (model: Model): Model => ({
   ]
 });
 
+const defaultAuditFilters: AuditFilters = {
+  actor: '',
+  action: '',
+  outcome: '',
+  target_engine: ''
+};
+
 export function App() {
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
   const [active, setActive] = useState<ProjectMeta | null>(null);
@@ -117,6 +125,8 @@ export function App() {
   const [tags, setTags] = useState<{ label: string; ref: string }[]>([]);
   const [diffChanges, setDiffChanges] = useState<DiffChange[]>([]);
   const [audit, setAudit] = useState<AuditEvent[]>([]);
+  const [auditFilters, setAuditFilters] = useState<AuditFilters>(defaultAuditFilters);
+  const auditFiltersRef = useRef<AuditFilters>(defaultAuditFilters);
   const [targetsFile, setTargetsFile] = useState<TargetsResponse>({ targets: [], clusters: [] });
   const [deployResult, setDeployResult] = useState<DeployResult | null>(null);
   const [probeResult, setProbeResult] = useState<ProbeResult | null>(null);
@@ -138,11 +148,16 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    auditFiltersRef.current = auditFilters;
+  }, [auditFilters]);
+
+  useEffect(() => {
     if (!active) return;
     setGenerated(null);
     setValidation(null);
     setDiffChanges([]);
     setAudit([]);
+    setAuditFilters(defaultAuditFilters);
     setTargetsFile({ targets: [], clusters: [] });
     setDeployResult(null);
     setProbeResult(null);
@@ -154,7 +169,7 @@ export function App() {
         setIRResponse(res);
         setDraft(JSON.stringify(res.ir, null, 2));
         void reloadSnapshots(active.id);
-        void reloadAudit(active.id);
+        void reloadAudit(active.id, defaultAuditFilters);
         void reloadTargets(active.id);
         void reloadMonitor(active.id);
       })
@@ -194,7 +209,9 @@ export function App() {
     const onAudit = (event: Event) => {
       try {
         const item = JSON.parse((event as MessageEvent<string>).data) as AuditEvent;
-        setAudit((items) => [item, ...items.filter((existing) => existing.event_id !== item.event_id)].slice(0, 50));
+        if (auditMatchesFilters(item, auditFiltersRef.current)) {
+          setAudit((items) => [item, ...items.filter((existing) => existing.event_id !== item.event_id)].slice(0, 50));
+        }
         setAuditStream('live');
       } catch (err) {
         setAuditStream('error');
@@ -308,9 +325,21 @@ export function App() {
     setTags(tagList);
   }
 
-  async function reloadAudit(projectID = active?.id ?? '') {
+  async function reloadAudit(projectID = active?.id ?? '', filters = auditFilters) {
     if (!projectID) return;
-    setAudit(await api.listAudit(projectID, 50));
+    setAudit(await api.listAudit(projectID, { ...filters, limit: 50 }));
+  }
+
+  async function applyAuditFilters(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await reloadAudit();
+  }
+
+  async function clearAuditFilters() {
+    setAuditFilters(defaultAuditFilters);
+    if (active) {
+      setAudit(await api.listAudit(active.id, { ...defaultAuditFilters, limit: 50 }));
+    }
   }
 
   async function reloadTargets(projectID = active?.id ?? '') {
@@ -803,6 +832,55 @@ export function App() {
               </button>
             </div>
           </div>
+          <form className="audit-filters" onSubmit={applyAuditFilters}>
+            <input
+              type="datetime-local"
+              aria-label="Audit from"
+              value={auditFilters.from ?? ''}
+              onChange={(event) => setAuditFilters((filters) => ({ ...filters, from: event.target.value }))}
+            />
+            <input
+              type="datetime-local"
+              aria-label="Audit to"
+              value={auditFilters.to ?? ''}
+              onChange={(event) => setAuditFilters((filters) => ({ ...filters, to: event.target.value }))}
+            />
+            <input
+              placeholder="Actor"
+              value={auditFilters.actor ?? ''}
+              onChange={(event) => setAuditFilters((filters) => ({ ...filters, actor: event.target.value }))}
+            />
+            <input
+              placeholder="Action"
+              value={auditFilters.action ?? ''}
+              onChange={(event) => setAuditFilters((filters) => ({ ...filters, action: event.target.value }))}
+            />
+            <select
+              aria-label="Audit outcome"
+              value={auditFilters.outcome ?? ''}
+              onChange={(event) => setAuditFilters((filters) => ({ ...filters, outcome: event.target.value }))}
+            >
+              <option value="">Any outcome</option>
+              <option value="success">Success</option>
+              <option value="failed">Failed</option>
+              <option value="skipped">Skipped</option>
+            </select>
+            <select
+              aria-label="Audit target engine"
+              value={auditFilters.target_engine ?? ''}
+              onChange={(event) => setAuditFilters((filters) => ({ ...filters, target_engine: event.target.value as AuditFilters['target_engine'] }))}
+            >
+              <option value="">Any engine</option>
+              <option value="haproxy">HAProxy</option>
+              <option value="nginx">Nginx</option>
+            </select>
+            <button disabled={!active || busy}>
+              <RefreshCw size={15} /> Apply
+            </button>
+            <button type="button" disabled={!active || busy} onClick={clearAuditFilters}>
+              Reset
+            </button>
+          </form>
           <AuditList events={audit} />
         </section>
       </section>
@@ -974,6 +1052,29 @@ function AuditList({ events }: { events: AuditEvent[] }) {
       ))}
     </div>
   );
+}
+
+function auditMatchesFilters(event: AuditEvent, filters: AuditFilters) {
+  const timestamp = new Date(event.timestamp).getTime();
+  if (filters.from && timestamp < new Date(filters.from).getTime()) {
+    return false;
+  }
+  if (filters.to && timestamp > new Date(filters.to).getTime()) {
+    return false;
+  }
+  if (filters.actor && event.actor.toLowerCase() !== filters.actor.toLowerCase()) {
+    return false;
+  }
+  if (filters.action && event.action !== filters.action) {
+    return false;
+  }
+  if (filters.outcome && event.outcome !== filters.outcome) {
+    return false;
+  }
+  if (filters.target_engine && event.target_engine !== filters.target_engine) {
+    return false;
+  }
+  return true;
 }
 
 function IssueList({ issues }: { issues: IRResponse['issues'] }) {
