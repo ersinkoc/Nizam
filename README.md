@@ -200,6 +200,8 @@ Verify a published GitHub Release:
 .\scripts\verify-release.ps1 -Tag v0.1.4
 ```
 
+Tag-triggered GitHub Releases run the same verification automatically after publish.
+
 If `cosign` is installed, also verify the keyless Sigstore signatures:
 
 ```powershell
