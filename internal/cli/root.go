@@ -829,6 +829,9 @@ func deployCmd(ctx context.Context, args []string, stdout, stderr io.Writer) err
 }
 
 func deployDrillCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	if len(args) > 0 && args[0] == "verify" {
+		return deployDrillVerifyCmd(args[1:], stdout, stderr)
+	}
 	fs := flag.NewFlagSet("deploy drill", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	summary := fs.Bool("summary", false, "write compact drill summary JSON")
@@ -903,6 +906,41 @@ func deployDrillCmd(ctx context.Context, args []string, stdout, stderr io.Writer
 		return errors.New("deploy drill failed")
 	}
 	return nil
+}
+
+func deployDrillVerifyCmd(args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("deploy drill verify", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	file := fs.String("file", "", "drill evidence file from deploy drill --out")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("deploy drill verify does not accept positional arguments")
+	}
+	if *file == "" {
+		return errors.New("--file is required")
+	}
+	data, err := os.ReadFile(*file)
+	if err != nil {
+		return err
+	}
+	summary, err := deploy.ParseDrillEvidence(data)
+	if err != nil {
+		return fmt.Errorf("parse drill evidence: %w", err)
+	}
+	if err := deploy.ValidateDrillEvidence(summary); err != nil {
+		return fmt.Errorf("invalid drill evidence: %w", err)
+	}
+	_, err = fmt.Fprintf(
+		stdout,
+		"Drill evidence verified: status=%s scenarios=%d rollback_attempted=%d cleanup_failed=%d\n",
+		summary.Status,
+		summary.Totals.Scenarios,
+		summary.Totals.RollbackAttempted,
+		summary.Totals.CleanupFailed,
+	)
+	return err
 }
 
 func deployCredentialProvider(home string, passphrase []byte) deploy.CredentialProvider {
@@ -1773,6 +1811,7 @@ Usage:
   mizan deploy --project <id> --cluster-id <cluster-id> [--batch 1]
   mizan deploy --project <id> --cluster-id <cluster-id> --execute --confirm-snapshot <snapshot_hash> --approved-by alice,bob
   mizan deploy drill [--summary] [--format json|summary|text] [--out file]
+  mizan deploy drill verify --file staging-drill-summary.json
   mizan approval request --project <id> --cluster-id <cluster-id> [--batch 1]
   mizan approval approve --project <id> --actor alice <approval-request-id>
   mizan deploy --project <id> --approval-request-id <approval-request-id> --execute

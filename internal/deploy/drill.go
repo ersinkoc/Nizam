@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -124,6 +125,100 @@ func SummarizeDrill(report DrillReport) DrillSummary {
 		})
 	}
 	return summary
+}
+
+func ParseDrillEvidence(data []byte) (DrillSummary, error) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return DrillSummary{}, err
+	}
+	if _, ok := raw["totals"]; ok {
+		var summary DrillSummary
+		if err := json.Unmarshal(data, &summary); err != nil {
+			return DrillSummary{}, err
+		}
+		return summary, nil
+	}
+	var report DrillReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		return DrillSummary{}, err
+	}
+	return SummarizeDrill(report), nil
+}
+
+func ValidateDrillEvidence(summary DrillSummary) error {
+	if summary.Status != "success" {
+		return fmt.Errorf("drill status is %q", summary.Status)
+	}
+	expectedScenarios := map[string]bool{
+		"remote_validation_failure_cleans_tmp":      false,
+		"install_failure_rolls_back_and_cleans_tmp": false,
+		"probe_failure_rolls_back_and_cleans_tmp":   false,
+		"cleanup_failure_is_incident_signal":        false,
+	}
+	var totals DrillSummaryTotals
+	for _, scenario := range summary.Scenarios {
+		if _, ok := expectedScenarios[scenario.Name]; ok {
+			expectedScenarios[scenario.Name] = true
+		}
+		if scenario.Status != "success" {
+			return fmt.Errorf("scenario %q status is %q", scenario.Name, scenario.Status)
+		}
+		if err := validateDrillScenarioEvidence(scenario); err != nil {
+			return err
+		}
+		totals.Scenarios++
+		if scenario.DeploymentStatus == "failed" {
+			totals.DeploymentFailures++
+		}
+		totals.RollbackAttempted += scenario.Rollback.Attempted
+		totals.RollbackSucceeded += scenario.Rollback.Succeeded
+		totals.RollbackFailed += scenario.Rollback.Failed
+		totals.CleanupAttempted += scenario.Cleanup.Attempted
+		totals.CleanupSucceeded += scenario.Cleanup.Succeeded
+		totals.CleanupFailed += scenario.Cleanup.Failed
+	}
+	for name, present := range expectedScenarios {
+		if !present {
+			return fmt.Errorf("missing required drill scenario %q", name)
+		}
+	}
+	if totals != summary.Totals {
+		return fmt.Errorf("drill totals mismatch: declared=%+v calculated=%+v", summary.Totals, totals)
+	}
+	if summary.Totals.FailedScenarios != 0 {
+		return fmt.Errorf("failed_scenarios=%d", summary.Totals.FailedScenarios)
+	}
+	if summary.Totals.RollbackAttempted < 2 || summary.Totals.RollbackFailed != 0 {
+		return fmt.Errorf("unexpected rollback totals: %+v", summary.Totals)
+	}
+	if summary.Totals.CleanupAttempted < 4 || summary.Totals.CleanupFailed < 1 {
+		return fmt.Errorf("unexpected cleanup totals: %+v", summary.Totals)
+	}
+	return nil
+}
+
+func validateDrillScenarioEvidence(scenario DrillScenarioSummary) error {
+	if scenario.DeploymentStatus != "failed" {
+		return fmt.Errorf("scenario %q deployment_status is %q", scenario.Name, scenario.DeploymentStatus)
+	}
+	switch scenario.Name {
+	case "remote_validation_failure_cleans_tmp":
+		if scenario.Rollback.Planned != 0 || scenario.Rollback.Attempted != 0 || scenario.Cleanup.Succeeded != 1 || scenario.Cleanup.Failed != 0 {
+			return fmt.Errorf("unexpected remote validation drill evidence: %+v", scenario)
+		}
+	case "install_failure_rolls_back_and_cleans_tmp", "probe_failure_rolls_back_and_cleans_tmp":
+		if scenario.Rollback.Attempted != 1 || scenario.Rollback.Succeeded != 1 || scenario.Rollback.Failed != 0 || scenario.Cleanup.Succeeded != 1 || scenario.Cleanup.Failed != 0 {
+			return fmt.Errorf("unexpected rollback drill evidence for %q: %+v", scenario.Name, scenario)
+		}
+	case "cleanup_failure_is_incident_signal":
+		if scenario.Rollback.Attempted != 0 || scenario.Cleanup.Attempted != 1 || scenario.Cleanup.Failed != 1 {
+			return fmt.Errorf("unexpected cleanup failure drill evidence: %+v", scenario)
+		}
+	default:
+		return nil
+	}
+	return nil
 }
 
 func FormatDrillText(report DrillReport) string {

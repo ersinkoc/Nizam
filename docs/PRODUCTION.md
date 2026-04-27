@@ -166,6 +166,7 @@ mizan deploy --project <id> --cluster-id <cluster-id> --batch 1
 mizan deploy drill --summary
 mizan deploy drill --format text
 mizan deploy drill --summary --out staging-drill-summary.json
+mizan deploy drill verify --file staging-drill-summary.json
 mizan approval request --project <id> --cluster-id <cluster-id> --batch 1
 mizan approval approve --project <id> --actor alice <approval-request-id>
 mizan approval approve --project <id> --actor bob <approval-request-id>
@@ -182,14 +183,14 @@ For clusters, start with `--batch 1`, confirm probe and monitor health, then pro
 Recommended rollout loop:
 
 1. Dry-run the exact target or cluster batch and inspect the generated steps.
-2. Run `mizan deploy drill --summary` on the operator workstation or deployment container to confirm the local binary's rollback and cleanup contracts.
+2. Run `mizan deploy drill --summary --out staging-drill-summary.json` and `mizan deploy drill verify --file staging-drill-summary.json` on the operator workstation or deployment container to confirm the local binary's rollback and cleanup contracts.
 3. Confirm the dry-run contains the expected rollback step when `rollback_command` is configured.
 4. Create an approval request for the same batch and collect the required actors.
 5. Execute with `--approval-request-id` or `approval_request_id` only after the request is approved.
 6. Run `mizan monitor snapshot --project <id>` after each batch before approving the next batch.
 7. Stop the rollout if monitor health regresses, audit entries look unexpected, or a rollback step appears in an executed run.
 
-`mizan deploy drill` is a local fault-injection smoke test. It does not SSH to real targets; it uses simulated runners to verify that remote validation failures skip install/reload and clean temporary config, install/probe failures attempt rollback and cleanup, and cleanup failures are surfaced as incident signals. Use `--summary` for CI/runbook gates, `--format text` for a concise operator-readable terminal report, `--out <file>` for archived evidence, and omit all three when you need full simulated step output on stdout. Use it before staging drills, not as a replacement for staging drills against real HAProxy/Nginx hosts.
+`mizan deploy drill` is a local fault-injection smoke test. It does not SSH to real targets; it uses simulated runners to verify that remote validation failures skip install/reload and clean temporary config, install/probe failures attempt rollback and cleanup, and cleanup failures are surfaced as incident signals. Use `--summary` for CI/runbook gates, `--format text` for a concise operator-readable terminal report, `--out <file>` for archived evidence, `deploy drill verify --file <file>` to validate archived evidence before release, and omit all three when you need full simulated step output on stdout. Use it before staging drills, not as a replacement for staging drills against real HAProxy/Nginx hosts.
 
 Use `docs/STAGING-DRILLS.md` for the real-target drill checklist that validates HAProxy/Nginx host behavior before production rollout.
 

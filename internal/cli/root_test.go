@@ -342,6 +342,21 @@ func TestProjectGenerateValidateAndSnapshotCommands(t *testing.T) {
 		t.Fatalf("deploy drill text file unexpected: %s", string(drillText))
 	}
 	stdout.Reset()
+	if err := Run(context.Background(), []string{"deploy", "drill", "verify", "--file", drillSummaryPath}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte("Drill evidence verified: status=success scenarios=4")) {
+		t.Fatalf("deploy drill verify output unexpected: %s", stdout.String())
+	}
+	stdout.Reset()
+	tamperedDrillPath := filepath.Join(t.TempDir(), "drill-tampered.json")
+	if err := os.WriteFile(tamperedDrillPath, bytes.Replace(drillSummary, []byte(`"cleanup_failed": 1`), []byte(`"cleanup_failed": 0`), 1), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Run(context.Background(), []string{"deploy", "drill", "verify", "--file", tamperedDrillPath}, &stdout, &stderr); err == nil {
+		t.Fatal("expected deploy drill verify to reject tampered evidence")
+	}
+	stdout.Reset()
 	if err := Run(context.Background(), []string{"monitor", "snapshot", "--home", home, "--project", created.Project.ID}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}

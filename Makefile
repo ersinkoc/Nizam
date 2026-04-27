@@ -51,7 +51,9 @@ e2e:
 	cd webui && npm run test:e2e
 
 deploy-drill:
-	go run ./cmd/mizan deploy drill --summary
+	mkdir -p dist
+	go run ./cmd/mizan deploy drill --summary --out dist/staging-drill-summary.json
+	go run ./cmd/mizan deploy drill verify --file dist/staging-drill-summary.json
 
 release-check: workflow-lint coverage vuln e2e deploy-drill binary container-scan
 

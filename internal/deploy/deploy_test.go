@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -509,6 +510,42 @@ func TestRunDrill(t *testing.T) {
 	}
 	if byName["cleanup_failure_is_incident_signal"].Cleanup.Failed != 1 || byName["cleanup_failure_is_incident_signal"].DeploymentStatus != "failed" {
 		t.Fatalf("unexpected cleanup failure drill summary: %+v", byName["cleanup_failure_is_incident_signal"])
+	}
+}
+
+func TestDrillEvidenceValidation(t *testing.T) {
+	report := RunDrill(t.Context())
+	reportData, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary, err := ParseDrillEvidence(reportData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateDrillEvidence(summary); err != nil {
+		t.Fatal(err)
+	}
+	summaryData, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsedSummary, err := ParseDrillEvidence(summaryData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateDrillEvidence(parsedSummary); err != nil {
+		t.Fatal(err)
+	}
+	parsedSummary.Totals.CleanupFailed = 0
+	if err := ValidateDrillEvidence(parsedSummary); err == nil {
+		t.Fatal("expected tampered drill totals to fail validation")
+	}
+	parsedSummary = summary
+	parsedSummary.Scenarios = parsedSummary.Scenarios[:len(parsedSummary.Scenarios)-1]
+	parsedSummary.Totals.Scenarios--
+	if err := ValidateDrillEvidence(parsedSummary); err == nil {
+		t.Fatal("expected missing drill scenario to fail validation")
 	}
 }
 
