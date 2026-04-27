@@ -8,10 +8,20 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
+          go-version: '1.25.9'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+      - run: npm ci
+        working-directory: webui
+      - run: npm run build
+        working-directory: webui
+      - run: rm -rf internal/server/dist && cp -r webui/dist internal/server/dist
       - run: mkdir -p dist
       - run: go test -coverprofile dist/coverage.out ./...
       - run: go tool cover -func dist/coverage.out
@@ -20,8 +30,8 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
@@ -44,8 +54,8 @@ jobs:
   container:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
@@ -56,18 +66,14 @@ jobs:
         working-directory: webui
       - run: rm -rf internal/server/dist && cp -r webui/dist internal/server/dist
       - run: docker build --target runtime --build-arg VERSION=ci --build-arg COMMIT=${{ github.sha }} --build-arg DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" -t mizan:ci .
-      - uses: docker/scout-action@v1
+      - uses: anchore/scan-action@v7.4.0
         with:
-          command: cves
-          image: local://mizan:ci
-          only-severities: critical,high
-          exit-code: true
-          write-comment: false
+          image: mizan:ci
+          fail-build: true
+          severity-cutoff: high
       - run: docker build --target runtime-ssh --build-arg VERSION=ci --build-arg COMMIT=${{ github.sha }} --build-arg DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" -t mizan:ssh-ci .
-      - uses: docker/scout-action@v1
+      - uses: anchore/scan-action@v7.4.0
         with:
-          command: cves
-          image: local://mizan:ssh-ci
-          only-severities: critical,high
-          exit-code: true
-          write-comment: false
+          image: mizan:ssh-ci
+          fail-build: true
+          severity-cutoff: high

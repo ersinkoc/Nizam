@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1115,9 +1117,7 @@ func TestAPIStoreAndNativeFailureBranches(t *testing.T) {
 	if err := os.Setenv("PATH", dir+string(os.PathListSeparator)+oldPath); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "haproxy.bat"), []byte("@echo off\r\necho native failed\r\nexit /b 3\r\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeFakeNativeBinary(t, dir, "haproxy", "native failed", 3)
 	st := store.New(t.TempDir())
 	mux := http.NewServeMux()
 	Register(mux, st)
@@ -1228,6 +1228,19 @@ func doPossiblyRawJSON(mux http.Handler, method, path string, body any, headers 
 	res := httptest.NewRecorder()
 	mux.ServeHTTP(res, req)
 	return res
+}
+
+func writeFakeNativeBinary(t *testing.T, dir, name, output string, exitCode int) {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	content := "#!/bin/sh\necho " + output + "\nexit " + strconv.Itoa(exitCode) + "\n"
+	if runtime.GOOS == "windows" {
+		path += ".bat"
+		content = "@echo off\r\necho " + output + "\r\nexit /b " + strconv.Itoa(exitCode) + "\r\n"
+	}
+	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+		t.Fatal(err)
+	}
 }
 
 type plainResponse struct {

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -45,19 +47,19 @@ func TestRunNativeSuccessAndFailureWithFakeBinary(t *testing.T) {
 	if err := os.Setenv("PATH", dir+string(os.PathListSeparator)+oldPath); err != nil {
 		t.Fatal(err)
 	}
-	writeFakeBinary(t, filepath.Join(dir, "haproxy.bat"), "@echo off\r\necho ok\r\nexit /b 0\r\n")
+	writeFakeNativeBinary(t, dir, "haproxy", "ok", 0)
 	ok := runNative(context.Background(), ir.EngineHAProxy, "global\n")
 	if !ok.Available || ok.Skipped || ok.ExitCode != 0 || ok.Stderr == "" {
 		t.Fatalf("unexpected success native result: %+v", ok)
 	}
 
-	writeFakeBinary(t, filepath.Join(dir, "nginx.bat"), "@echo off\r\necho bad\r\nexit /b 7\r\n")
+	writeFakeNativeBinary(t, dir, "nginx", "bad", 7)
 	failed := runNative(context.Background(), ir.EngineNginx, "events {}\n")
 	if !failed.Available || failed.Skipped || failed.ExitCode == 0 || failed.Stderr == "" {
 		t.Fatalf("unexpected failed native result: %+v", failed)
 	}
 
-	writeFakeBinary(t, filepath.Join(dir, "custom.bat"), "@echo off\r\necho custom\r\nexit /b 0\r\n")
+	writeFakeNativeBinary(t, dir, "custom", "custom", 0)
 	unsupported := runNative(context.Background(), ir.Engine("custom"), "config")
 	if unsupported.Available || !unsupported.Skipped || !strings.Contains(unsupported.Error, "unsupported target") {
 		t.Fatalf("unexpected unsupported native result: %+v", unsupported)
@@ -71,7 +73,7 @@ func TestRunNativeTempErrors(t *testing.T) {
 	if err := os.Setenv("PATH", dir+string(os.PathListSeparator)+oldPath); err != nil {
 		t.Fatal(err)
 	}
-	writeFakeBinary(t, filepath.Join(dir, "haproxy.bat"), "@echo off\r\necho ok\r\nexit /b 0\r\n")
+	writeFakeNativeBinary(t, dir, "haproxy", "ok", 0)
 
 	originalCreateTemp := createTemp
 	createTemp = func(string, string) (*os.File, error) {
@@ -94,8 +96,14 @@ func TestRunNativeTempErrors(t *testing.T) {
 	}
 }
 
-func writeFakeBinary(t *testing.T, path, content string) {
+func writeFakeNativeBinary(t *testing.T, dir, name, output string, exitCode int) {
 	t.Helper()
+	path := filepath.Join(dir, name)
+	content := "#!/bin/sh\necho " + output + "\nexit " + strconv.Itoa(exitCode) + "\n"
+	if runtime.GOOS == "windows" {
+		path += ".bat"
+		content = "@echo off\r\necho " + output + "\r\nexit /b " + strconv.Itoa(exitCode) + "\r\n"
+	}
 	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
 		t.Fatal(err)
 	}

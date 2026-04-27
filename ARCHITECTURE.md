@@ -603,7 +603,7 @@ Current coverage state:
 | Browser E2E workflow | Playwright Chromium pass |
 | Full npm audit | 0 vulnerabilities |
 | Go vulnerability scan | govulncheck pass: 0 vulnerabilities |
-| Container high/critical scan | Docker Scout gate pass |
+| Container high/critical scan | Anchore/Grype CI gate pass; Docker Scout local gate pass |
 
 ## Implemented Capabilities
 

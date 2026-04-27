@@ -12,7 +12,7 @@ Mizan is release-ready for the documented v0.1 scope:
 - WebUI and CLI flows cover create/import, edit, generate, validate, dry-run deploy planning, approvals, monitor snapshots/streams, audit filters, and CSV export.
 - CLI `deploy --execute` is implemented through the local `ssh` command with vault-backed username/private-key support and snapshot confirmation.
 - The default container is a minimal WebUI/API runtime; the separate `runtime-ssh` image is available when remote deployment execution must happen inside the container.
-- CI gates Go tests, frontend lint/coverage/build/E2E, Go/npm vulnerability scans, and high/critical Docker Scout CVEs for both runtime images.
+- CI gates Go tests, frontend lint/coverage/build/E2E, Go/npm vulnerability scans, and high/critical container CVEs for both runtime images.
 
 The boundaries below are intentional v0.1 scope limits, not open blockers for the current release.
 
@@ -203,11 +203,11 @@ Production releases should pass:
 make release-check
 ```
 
-`make release-check` runs backend coverage, frontend coverage, browser E2E, Go/npm vulnerability scans, the embedded binary build, and high/critical Docker Scout gates for both runtime images. If Docker is unavailable on a local workstation, run the non-container gates directly and rely on CI for `container-scan`.
+`make release-check` runs backend coverage, frontend coverage, browser E2E, Go/npm vulnerability scans, the embedded binary build, and high/critical Docker Scout gates for both runtime images. If Docker is unavailable on a local workstation, run the non-container gates directly and rely on CI's Anchore/Grype image scan.
 
 CI fails the container job on critical or high CVEs for both `runtime` and `runtime-ssh`. Medium findings remain visible in the scanner output so operators can track base-image remediation without blocking routine builds.
 
-The release workflow runs when a `v*` tag is pushed, and it can also be started manually from GitHub Actions. It builds cross-platform binaries, embeds the release version/commit/date metadata, and uploads a SHA-256 checksum, keyless Sigstore signature, and signing certificate beside each artifact. Before tagging a release, verify the generated binary embeds the current WebUI and returns the expected `/version` metadata.
+The release workflow runs when a `v*` tag is pushed, and it can also be started manually from GitHub Actions. Tag-triggered releases build cross-platform binaries, embed the release version/commit/date metadata, upload build artifacts, and publish a GitHub Release containing each binary plus its SHA-256 checksum, keyless Sigstore signature, and signing certificate. Before tagging a release, verify the generated binary embeds the current WebUI and returns the expected `/version` metadata.
 
 ## Supported Scope Boundaries
 

@@ -12,7 +12,7 @@ on:
         default: 0.1.0-dev
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 jobs:
@@ -26,11 +26,11 @@ jobs:
             goarch: arm64
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
-      - uses: actions/setup-node@v4
+          go-version: '1.25.9'
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
@@ -65,3 +65,35 @@ jobs:
             dist/mizan-${{ matrix.goos }}-${{ matrix.goarch }}.sha256
             dist/mizan-${{ matrix.goos }}-${{ matrix.goarch }}.sig
             dist/mizan-${{ matrix.goos }}-${{ matrix.goarch }}.pem
+
+  publish:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          notes_file="$(mktemp)"
+          cat > "$notes_file" <<EOF
+          Mizan ${version}
+
+          Release artifacts include:
+          - Linux, macOS, and Windows binaries
+          - SHA-256 checksum files
+          - Keyless Sigstore signatures
+          - Sigstore signing certificates
+          EOF
+          mapfile -t files < <(find release-artifacts -type f | sort)
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "${files[@]}" --clobber
+          else
+            gh release create "$tag" "${files[@]}" --title "Mizan ${version}" --notes-file "$notes_file"
+          fi
