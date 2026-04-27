@@ -214,6 +214,66 @@ http {
 	}
 }
 
+func TestParserHandlesQuotedValuesIPv6AndNestedNginxContexts(t *testing.T) {
+	haproxyCfg := `
+frontend web
+  bind [::]:443 ssl crt "/etc/ssl/edge cert.pem" # public IPv6 listener
+  acl api path_beg "/api # literal/"
+  use_backend be_api if api
+backend be_api
+  server api1 [2001:db8::10]:9443 weight 70 maxconn 25
+`
+	model, err := ParseHAProxy(haproxyCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if model.Frontends[0].Bind != "[::]:443" || len(model.TLSProfiles) != 1 || model.TLSProfiles[0].CertPath != "/etc/ssl/edge cert.pem" {
+		t.Fatalf("expected quoted HAProxy TLS bind, got frontend=%+v tls=%+v", model.Frontends[0], model.TLSProfiles)
+	}
+	if got := model.Rules[0].Predicate.Value; got != "/api # literal/" {
+		t.Fatalf("expected quoted HAProxy ACL value to keep #, got %q", got)
+	}
+	if srv := model.Servers[0]; srv.Address != "2001:db8::10" || srv.Port != 9443 || srv.Weight != 70 || srv.MaxConn != 25 {
+		t.Fatalf("expected bracketed IPv6 server address, got %+v", srv)
+	}
+
+	nginxCfg := `
+http {
+  upstream be_api {
+    server [2001:db8::20]:8080 weight=60 max_conns=40;
+  }
+  server {
+    listen [::]:443 ssl http2;
+    ssl_certificate "/etc/ssl/edge # cert.pem";
+    ssl_certificate_key "/etc/ssl/edge key.pem";
+    location /api/ {
+      proxy_set_header X-Debug "literal # not comment";
+      if ($request_method = POST) {
+        set $mizan_skip 0;
+      }
+      proxy_pass http://be_api;
+    }
+  }
+}
+`
+	nginxModel, err := ParseNginx(nginxCfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if srv := nginxModel.Servers[0]; srv.Address != "2001:db8::20" || srv.Port != 8080 || srv.Weight != 60 || srv.MaxConn != 40 {
+		t.Fatalf("expected bracketed Nginx IPv6 upstream, got %+v", srv)
+	}
+	if fe := nginxModel.Frontends[0]; fe.Bind != "[::]:443" || fe.Protocol != "http2" || len(fe.Rules) != 1 {
+		t.Fatalf("expected nested Nginx location to stay attached to server, got %+v", fe)
+	}
+	if tls := nginxModel.TLSProfiles[0]; tls.CertPath != "/etc/ssl/edge # cert.pem" || tls.KeyPath != "/etc/ssl/edge key.pem" {
+		t.Fatalf("expected quoted Nginx TLS paths, got %+v", tls)
+	}
+	if rule := nginxModel.Rules[0]; rule.Predicate.Value != "/api/" || rule.Action.BackendID != "be_api" {
+		t.Fatalf("expected Nginx proxy_pass rule after nested if context, got %+v", rule)
+	}
+}
+
 func TestParserDefensiveBranches(t *testing.T) {
 	haproxyCfg := `
 frontend

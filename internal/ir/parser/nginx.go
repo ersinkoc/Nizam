@@ -11,45 +11,98 @@ import (
 func ParseNginx(config string) (*ir.Model, error) {
 	m := ir.EmptyModel("", "imported-nginx", "Imported from nginx.conf", []ir.Engine{ir.EngineNginx})
 	scanner := bufio.NewScanner(strings.NewReader(config))
-	var block, name string
 	backendIndex := map[string]int{}
+	var stack []nginxContext
 
 	for scanner.Scan() {
 		line := strings.TrimPrefix(strings.TrimSpace(scanner.Text()), "\ufeff")
 		line = stripInlineComment(line)
-		line = strings.TrimSuffix(line, ";")
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		fields := strings.Fields(line)
+		fields := tokenizeNginxLine(line)
+		if len(fields) == 0 {
+			continue
+		}
+		closeCount := 0
+		for len(fields) > 0 && fields[0] == "}" {
+			closeCount++
+			fields = fields[1:]
+		}
+		for ; closeCount > 0 && len(stack) > 0; closeCount-- {
+			stack = stack[:len(stack)-1]
+		}
+		if len(fields) == 0 {
+			continue
+		}
+		opensBlock := fields[len(fields)-1] == "{"
+		if opensBlock {
+			fields = fields[:len(fields)-1]
+		}
+		fields = trimNginxSemicolon(fields)
+		if len(fields) == 0 {
+			continue
+		}
 		switch {
-		case fields[0] == "upstream" && len(fields) >= 2:
-			block, name = "upstream", strings.TrimSuffix(fields[1], "{")
+		case opensBlock && fields[0] == "upstream" && len(fields) >= 2:
+			name := fields[1]
 			backendIndex[name] = len(m.Backends)
 			m.Backends = append(m.Backends, ir.Backend{ID: name, Name: name, Algorithm: "roundrobin", Servers: []string{}, View: ir.EntityView{X: 420, Y: float64(100 + len(m.Backends)*140)}})
-		case fields[0] == "server" && strings.HasSuffix(line, "{"):
-			block, name = "server", "server"
+			stack = append(stack, nginxContext{Kind: "upstream", Name: name})
+		case opensBlock && fields[0] == "server":
+			frontendIndex := len(m.Frontends)
 			m.Frontends = append(m.Frontends, ir.Frontend{ID: normalizeID("fe", strconv.Itoa(len(m.Frontends)+1)), Name: "server", Protocol: "http", Rules: []string{}, View: ir.EntityView{X: 80, Y: float64(100 + len(m.Frontends)*140)}})
-		case fields[0] == "location" && len(fields) >= 2:
-			block, name = "location", fields[1]
-		case fields[0] == "}":
-			block, name = "", ""
+			stack = append(stack, nginxContext{Kind: "server", Name: "server", FrontendIndex: frontendIndex})
+		case opensBlock && fields[0] == "location" && len(fields) >= 2:
+			ctx := currentNginxContext(stack)
+			stack = append(stack, nginxContext{Kind: "location", Name: fields[1], FrontendIndex: ctx.FrontendIndex})
+		case opensBlock:
+			stack = append(stack, nginxContext{Kind: fields[0], Name: ""})
 		default:
-			if block == "upstream" {
-				idx, ok := backendIndex[name]
+			ctx := currentNginxContext(stack)
+			if ctx.Kind == "upstream" {
+				idx, ok := backendIndex[ctx.Name]
 				if ok {
 					parseNginxUpstreamLine(m, &m.Backends[idx], fields)
 				}
 			}
-			if block == "server" && len(m.Frontends) > 0 {
-				parseNginxServerLine(m, &m.Frontends[len(m.Frontends)-1], fields)
+			if ctx.Kind == "server" && ctx.FrontendIndex >= 0 && ctx.FrontendIndex < len(m.Frontends) {
+				parseNginxServerLine(m, &m.Frontends[ctx.FrontendIndex], fields)
 			}
-			if block == "location" && len(m.Frontends) > 0 {
-				parseNginxLocationLine(m, &m.Frontends[len(m.Frontends)-1], name, fields)
+			if ctx.Kind == "location" && ctx.FrontendIndex >= 0 && ctx.FrontendIndex < len(m.Frontends) {
+				parseNginxLocationLine(m, &m.Frontends[ctx.FrontendIndex], ctx.Name, fields)
 			}
 		}
 	}
 	return m, scanner.Err()
+}
+
+type nginxContext struct {
+	Kind          string
+	Name          string
+	FrontendIndex int
+}
+
+func currentNginxContext(stack []nginxContext) nginxContext {
+	if len(stack) == 0 {
+		return nginxContext{FrontendIndex: -1}
+	}
+	return stack[len(stack)-1]
+}
+
+func tokenizeNginxLine(line string) []string {
+	line = strings.NewReplacer("{", " { ", "}", " } ", ";", " ; ").Replace(line)
+	return splitConfigFields(line)
+}
+
+func trimNginxSemicolon(fields []string) []string {
+	out := fields[:0]
+	for _, field := range fields {
+		if field != ";" {
+			out = append(out, field)
+		}
+	}
+	return out
 }
 
 func parseNginxUpstreamLine(m *ir.Model, be *ir.Backend, fields []string) {

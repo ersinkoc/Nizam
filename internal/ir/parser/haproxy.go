@@ -2,6 +2,7 @@ package parser
 
 import (
 	"bufio"
+	"net"
 	"strconv"
 	"strings"
 
@@ -22,7 +23,10 @@ func ParseHAProxy(config string) (*ir.Model, error) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		fields := strings.Fields(line)
+		fields := splitConfigFields(line)
+		if len(fields) == 0 {
+			continue
+		}
 		switch fields[0] {
 		case "frontend", "listen":
 			if len(fields) < 2 {
@@ -234,10 +238,24 @@ func hasHAProxyCheckOptions(fields []string) bool {
 }
 
 func splitHostPort(v string) (string, int) {
-	idx := strings.LastIndex(v, ":")
-	if idx < 0 {
-		return v, 80
+	v = strings.TrimSpace(v)
+	v = strings.TrimSuffix(v, ";")
+	if host, portText, err := net.SplitHostPort(v); err == nil {
+		port, err := strconv.Atoi(portText)
+		if err != nil {
+			port = 80
+		}
+		return strings.Trim(host, "[]"), port
 	}
+	if strings.HasPrefix(v, "[") && strings.Contains(v, "]") {
+		host := strings.TrimPrefix(v[:strings.Index(v, "]")+1], "[")
+		host = strings.TrimSuffix(host, "]")
+		return host, 80
+	}
+	if strings.Count(v, ":") != 1 {
+		return strings.Trim(v, "[]"), 80
+	}
+	idx := strings.LastIndex(v, ":")
 	port, err := strconv.Atoi(v[idx+1:])
 	if err != nil {
 		port = 80

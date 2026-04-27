@@ -20,7 +20,7 @@ Latest verified release: `v0.1.6`, published from commit `2ce1688`, with signed/
 - Dockerfile, systemd unit, and Nginx TLS reverse proxy deployment examples
 - `mizan doctor` preflight checks for data root integrity, projects, targets, secrets, SSH, and native validators
 - Universal IR with structural linting, deterministic hashes, mutations, canonical JSON, and structural diffs
-- HAProxy and Nginx import for the supported v0 directive subset
+- HAProxy and Nginx import for the supported v0 directive subset, including quoted values, bracketed IPv6 endpoints, and supported nested Nginx contexts
 - HAProxy and Nginx generation from the shared IR
 - Validation pipeline with IR linting plus optional native `haproxy -c` / `nginx -t` checks when binaries exist on `PATH`
 - Snapshots, tags, snapshot retrieval, revert, and diff

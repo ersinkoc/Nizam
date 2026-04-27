@@ -271,7 +271,7 @@ flowchart LR
   Store --> UI
 ```
 
-Current parser coverage is intentionally basic. It handles the core v0 subset: frontends/listeners, backends/upstreams, servers, TLS certificate paths, default backends, simple ACL/location routing, weights, and basic health checks.
+Current parser coverage is intentionally scoped to the supported v0 subset. It handles frontends/listeners, backends/upstreams, servers, TLS certificate paths, default backends, simple ACL/location routing, weights, basic health checks, bracketed IPv6 endpoints, quoted directive values, and nested Nginx contexts for supported directives.
 
 ## Export Flow
 

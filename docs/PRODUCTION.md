@@ -251,7 +251,7 @@ Release and deployment automation can also run `mizan version --json` against a 
 
 These are deliberate v0.1 boundaries:
 
-- HAProxy/Nginx import targets the documented v0 directive subset. Advanced vendor-specific directives may need manual IR editing after import.
+- HAProxy/Nginx import targets the documented v0 directive subset. Bracketed IPv6 endpoints, quoted values, and supported nested Nginx contexts are covered; advanced vendor-specific directives may still need manual IR editing after import.
 - Approval identity is operator-supplied and audit-recorded. External SSO/RBAC integration is out of scope for v0.1.
 - SSH execution delegates password/passphrase behavior to the local SSH environment, agent, or config. Mizan stores vault-backed usernames and private keys, not interactive passwords.
 - Browser E2E covers the main operator workflow. Deep fault-injection scenarios, such as real remote rollback command failure, should be validated in an environment-specific staging setup before first production rollout.

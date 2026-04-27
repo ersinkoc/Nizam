@@ -35,12 +35,74 @@ func normalizeID(prefix, name string) string {
 }
 
 func stripInlineComment(line string) string {
-	idx := strings.Index(line, "#")
-	if idx < 0 {
-		return strings.TrimSpace(line)
-	}
-	if idx == 0 || line[idx-1] == ' ' || line[idx-1] == '\t' {
-		return strings.TrimSpace(line[:idx])
+	var quote rune
+	escaped := false
+	for idx, r := range line {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if r == '\\' && quote != 0 {
+			escaped = true
+			continue
+		}
+		if quote != 0 {
+			if r == quote {
+				quote = 0
+			}
+			continue
+		}
+		if r == '"' || r == '\'' {
+			quote = r
+			continue
+		}
+		if r == '#' && (idx == 0 || line[idx-1] == ' ' || line[idx-1] == '\t') {
+			return strings.TrimSpace(line[:idx])
+		}
 	}
 	return strings.TrimSpace(line)
+}
+
+func splitConfigFields(line string) []string {
+	var fields []string
+	var current strings.Builder
+	var quote rune
+	escaped := false
+	flush := func() {
+		if current.Len() == 0 {
+			return
+		}
+		fields = append(fields, current.String())
+		current.Reset()
+	}
+	for _, r := range line {
+		if escaped {
+			current.WriteRune(r)
+			escaped = false
+			continue
+		}
+		if r == '\\' && quote != 0 {
+			escaped = true
+			continue
+		}
+		if quote != 0 {
+			if r == quote {
+				quote = 0
+				continue
+			}
+			current.WriteRune(r)
+			continue
+		}
+		if r == '"' || r == '\'' {
+			quote = r
+			continue
+		}
+		if r == ' ' || r == '\t' || r == '\r' || r == '\n' {
+			flush()
+			continue
+		}
+		current.WriteRune(r)
+	}
+	flush()
+	return fields
 }
