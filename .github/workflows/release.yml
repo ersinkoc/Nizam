@@ -57,7 +57,7 @@ jobs:
             -o dist/mizan-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/mizan
       - run: cd dist && sha256sum mizan-${{ matrix.goos }}-${{ matrix.goarch }} > mizan-${{ matrix.goos }}-${{ matrix.goarch }}.sha256
       - run: cosign sign-blob --yes --output-signature dist/mizan-${{ matrix.goos }}-${{ matrix.goarch }}.sig --output-certificate dist/mizan-${{ matrix.goos }}-${{ matrix.goarch }}.pem dist/mizan-${{ matrix.goos }}-${{ matrix.goarch }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: mizan-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
