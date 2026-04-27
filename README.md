@@ -195,7 +195,7 @@ Current verified gates:
 | Browser E2E workflow | Playwright Chromium pass: import, edit, validate, batch approval, rollback dry-run, audit, monitor |
 | Full npm audit | 0 vulnerabilities |
 | Go vulnerability scan | govulncheck pass: 0 vulnerabilities |
-| Container high/critical scan | Docker Scout gate pass |
+| Container high/critical scan | Anchore/Grype CI gate pass; Docker Scout local gate pass |
 
 Frontend coverage is scoped to `webui/src/lib/**/*.ts` in `webui/vitest.config.ts`; backend coverage is measured across `./...`.
 
