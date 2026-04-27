@@ -220,13 +220,19 @@ After publishing a tag-triggered GitHub Release, verify the uploaded binaries an
 .\scripts\verify-release.ps1 -Tag v0.1.4
 ```
 
+When `cosign` is available, verify the keyless Sigstore signatures as well:
+
+```powershell
+.\scripts\verify-release.ps1 -Tag v0.1.4 -VerifySignatures
+```
+
 `make release-check` runs backend coverage, frontend coverage, browser E2E, Go/npm vulnerability scans, the embedded binary build, and high/critical Docker Scout gates for both runtime images. If Docker is unavailable on a local workstation, run the non-container gates directly and rely on CI's Anchore/Grype image scan.
 
 CI fails the container job on critical or high CVEs for both `runtime` and `runtime-ssh`. Medium findings remain visible in the scanner output so operators can track base-image remediation without blocking routine builds.
 
 The release workflow runs when a `v*` tag is pushed, and it can also be started manually from GitHub Actions. Tag-triggered releases build cross-platform binaries, embed the release version/commit/date metadata, upload build artifacts, and publish a GitHub Release containing each binary plus its SHA-256 checksum, keyless Sigstore signature, and signing certificate. Before tagging a release, verify the generated binary embeds the current WebUI and returns the expected `/version` metadata.
 
-The `scripts/verify-release.ps1` helper downloads the release assets with GitHub CLI, verifies each binary against its `.sha256` file, and confirms the expected `.sig` and `.pem` Sigstore metadata files are present.
+The `scripts/verify-release.ps1` helper downloads the release assets with GitHub CLI, verifies each binary against its `.sha256` file, and confirms the expected `.sig` and `.pem` Sigstore metadata files are present. With `-VerifySignatures`, it also runs `cosign verify-blob` against the GitHub Actions release workflow identity and the `https://token.actions.githubusercontent.com` OIDC issuer.
 
 Release and deployment automation can also run `mizan version --json` against a candidate binary to assert the embedded `version`, `commit`, and `date` values before installation.
 

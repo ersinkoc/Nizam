@@ -200,6 +200,12 @@ Verify a published GitHub Release:
 .\scripts\verify-release.ps1 -Tag v0.1.4
 ```
 
+If `cosign` is installed, also verify the keyless Sigstore signatures:
+
+```powershell
+.\scripts\verify-release.ps1 -Tag v0.1.4 -VerifySignatures
+```
+
 Current verified gates:
 
 | Area | Status |

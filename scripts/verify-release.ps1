@@ -6,7 +6,15 @@ param(
 
     [string]$OutputDirectory = "",
 
-    [switch]$SkipDownload
+    [switch]$SkipDownload,
+
+    [switch]$VerifySignatures,
+
+    [string]$CosignPath = "",
+
+    [string]$CertificateIdentity = "",
+
+    [string]$CertificateOidcIssuer = "https://token.actions.githubusercontent.com"
 )
 
 Set-StrictMode -Version Latest
@@ -35,6 +43,21 @@ if (-not $OutputDirectory) {
 }
 
 $gh = Resolve-Executable -Name "gh" -Fallback "C:\Program Files\GitHub CLI\gh.exe"
+$cosign = ""
+if ($VerifySignatures) {
+    if ($CosignPath) {
+        if (-not (Test-Path -LiteralPath $CosignPath -PathType Leaf)) {
+            throw "Cosign executable not found: $CosignPath"
+        }
+        $cosign = $CosignPath
+    }
+    else {
+        $cosign = Resolve-Executable -Name "cosign"
+    }
+    if (-not $CertificateIdentity) {
+        $CertificateIdentity = "https://github.com/$Repository/.github/workflows/release.yml@refs/tags/$Tag"
+    }
+}
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 
 if (-not $SkipDownload) {
@@ -72,6 +95,18 @@ foreach ($platform in $platforms) {
         throw "SHA-256 mismatch for $baseName. expected=$expectedHash actual=$actualHash"
     }
 
+    if ($VerifySignatures) {
+        & $cosign verify-blob `
+            --certificate $certificatePath `
+            --signature $signaturePath `
+            --certificate-identity $CertificateIdentity `
+            --certificate-oidc-issuer $CertificateOidcIssuer `
+            $binaryPath
+        if ($LASTEXITCODE -ne 0) {
+            throw "Cosign verification failed for $baseName"
+        }
+    }
+
     $verified += [pscustomobject]@{
         Asset  = $baseName
         SHA256 = $actualHash
@@ -85,3 +120,6 @@ if ($assetCount -ne 20) {
 
 $verified | Format-Table -AutoSize
 Write-Host "Release verification passed for ${Repository}@${Tag}: $($verified.Count) binaries, $assetCount assets."
+if ($VerifySignatures) {
+    Write-Host "Sigstore verification passed with identity '$CertificateIdentity' and issuer '$CertificateOidcIssuer'."
+}
