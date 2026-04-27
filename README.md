@@ -121,6 +121,7 @@ Current build baseline:
 | CI/release actions | `checkout@v6`, `setup-go@v6`, `setup-node@v6`, `upload-artifact@v7` |
 | Container builder | `golang:1.26.2-alpine` |
 | WebUI stack | React 19, TypeScript 6.0, Vite 8 |
+| Workflow lint | `actionlint v1.7.12` |
 
 With `make`:
 
@@ -194,6 +195,12 @@ Full release gate:
 make release-check
 ```
 
+Workflow-only gate:
+
+```sh
+make workflow-lint
+```
+
 Verify a published GitHub Release:
 
 ```powershell
@@ -219,11 +226,12 @@ Current verified gates:
 | Frontend core line coverage | 100% |
 | Frontend core branch coverage | 95.89% |
 | Browser E2E workflow | Playwright Chromium pass: import, edit, validate, batch approval, rollback dry-run, audit, monitor |
+| GitHub Actions workflow lint | actionlint pass |
 | Full npm audit | 0 vulnerabilities |
 | Go vulnerability scan | govulncheck pass: 0 vulnerabilities |
 | Container high/critical scan | Anchore/Grype CI gate pass; Docker Scout local gate pass |
 
-Frontend coverage is scoped to `webui/src/lib/**/*.ts` in `webui/vitest.config.ts`; backend coverage is measured across `./...`.
+Frontend coverage is scoped to `webui/src/lib/**/*.ts` in `webui/vitest.config.ts`; backend coverage is measured across `./...`. `make release-check` also runs actionlint against `.github/workflows`.
 
 For release or deployment scripts, use `mizan version --json` to verify the embedded `version`, `commit`, and `date` metadata before rollout.
 

@@ -13,7 +13,7 @@ Mizan is release-ready for the documented v0.1 scope:
 - WebUI and CLI flows cover create/import, edit, generate, validate, dry-run deploy planning, approvals, monitor snapshots/streams, audit filters, and CSV export.
 - CLI `deploy --execute` is implemented through the local `ssh` command with vault-backed username/private-key support and snapshot confirmation.
 - The default container is a minimal WebUI/API runtime; the separate `runtime-ssh` image is available when remote deployment execution must happen inside the container.
-- CI gates Go tests, frontend lint/coverage/build/E2E, Go/npm vulnerability scans, and high/critical container CVEs for both runtime images.
+- CI gates GitHub Actions workflow lint, Go tests, frontend lint/coverage/build/E2E, Go/npm vulnerability scans, and high/critical container CVEs for both runtime images.
 
 Current build baseline:
 
@@ -23,6 +23,7 @@ Current build baseline:
 | Docker build image | `golang:1.26.2-alpine` |
 | WebUI dependencies | React 19, TypeScript 6.0, Vite 8 |
 | GitHub Actions | `checkout@v6`, `setup-go@v6`, `setup-node@v6`, `upload-artifact@v7` |
+| Workflow lint | `actionlint v1.7.12` |
 
 The boundaries below are intentional v0.1 scope limits, not open blockers for the current release.
 
@@ -226,7 +227,7 @@ When `cosign` is available, verify the keyless Sigstore signatures as well:
 .\scripts\verify-release.ps1 -Tag v0.1.4 -VerifySignatures
 ```
 
-`make release-check` runs backend coverage, frontend coverage, browser E2E, Go/npm vulnerability scans, the embedded binary build, and high/critical Docker Scout gates for both runtime images. If Docker is unavailable on a local workstation, run the non-container gates directly and rely on CI's Anchore/Grype image scan.
+`make release-check` runs GitHub Actions workflow lint, backend coverage, frontend coverage, browser E2E, Go/npm vulnerability scans, the embedded binary build, and high/critical Docker Scout gates for both runtime images. CI runs the same actionlint check against GitHub Actions workflow files. If Docker is unavailable on a local workstation, run the non-container gates directly and rely on CI's Anchore/Grype image scan.
 
 CI fails the container job on critical or high CVEs for both `runtime` and `runtime-ssh`. Medium findings remain visible in the scanner output so operators can track base-image remediation without blocking routine builds.
 

@@ -1,8 +1,9 @@
 VERSION ?= 0.1.0-dev
 COMMIT ?= local
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+ACTIONLINT_VERSION ?= v1.7.12
 
-.PHONY: dev ui binary docker docker-ssh container-scan test coverage lint vuln e2e release-check clean
+.PHONY: dev ui binary docker docker-ssh container-scan workflow-lint test coverage lint vuln e2e release-check clean
 
 dev:
 	go run ./cmd/mizan serve
@@ -25,6 +26,9 @@ container-scan: docker docker-ssh
 	docker scout cves --exit-code --only-severity critical,high local://mizan:local
 	docker scout cves --exit-code --only-severity critical,high local://mizan:ssh-local
 
+workflow-lint:
+	go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION)
+
 test:
 	go test ./...
 	cd webui && npm test
@@ -35,7 +39,7 @@ coverage:
 	go tool cover -func dist/coverage.out
 	cd webui && npm run test:coverage
 
-lint:
+lint: workflow-lint
 	go test ./...
 	cd webui && npm run lint
 
@@ -46,7 +50,7 @@ vuln:
 e2e:
 	cd webui && npm run test:e2e
 
-release-check: coverage vuln e2e binary container-scan
+release-check: workflow-lint coverage vuln e2e binary container-scan
 
 clean:
 	rm -rf dist webui/dist internal/server/dist/assets
