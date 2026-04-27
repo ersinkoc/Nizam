@@ -35,6 +35,14 @@ jobs:
       - run: go test -coverprofile dist/coverage.out ./...
       - run: go tool cover -func dist/coverage.out
       - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      - name: Verify deploy drill evidence
+        run: |
+          go run ./cmd/mizan deploy drill --summary --out dist/staging-drill-summary.json
+          go run ./cmd/mizan deploy drill verify --file dist/staging-drill-summary.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: staging-drill-summary
+          path: dist/staging-drill-summary.json
 
   frontend:
     runs-on: ubuntu-latest

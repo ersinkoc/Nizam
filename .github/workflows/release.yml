@@ -16,7 +16,31 @@ permissions:
   id-token: write
 
 jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.9'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+      - run: npm ci
+        working-directory: webui
+      - run: npm run build
+        working-directory: webui
+      - run: rm -rf internal/server/dist && cp -r webui/dist internal/server/dist
+      - name: Verify deploy drill evidence
+        run: |
+          mkdir -p dist
+          go run ./cmd/mizan deploy drill --summary --out dist/staging-drill-summary.json
+          go run ./cmd/mizan deploy drill verify --file dist/staging-drill-summary.json
+
   build:
+    needs: preflight
     strategy:
       matrix:
         goos: [linux, darwin, windows]
