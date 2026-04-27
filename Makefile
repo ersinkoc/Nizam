@@ -2,7 +2,7 @@ VERSION ?= 0.1.0-dev
 COMMIT ?= local
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
-.PHONY: dev ui binary docker docker-ssh test coverage lint vuln e2e clean
+.PHONY: dev ui binary docker docker-ssh container-scan test coverage lint vuln e2e clean
 
 dev:
 	go run ./cmd/mizan serve
@@ -20,6 +20,10 @@ docker: ui
 
 docker-ssh: ui
 	docker build --target runtime-ssh --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) -t mizan:ssh-local .
+
+container-scan: docker docker-ssh
+	docker scout cves --exit-code --only-severity critical,high local://mizan:local
+	docker scout cves --exit-code --only-severity critical,high local://mizan:ssh-local
 
 test:
 	go test ./...

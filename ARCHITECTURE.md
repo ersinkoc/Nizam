@@ -587,6 +587,7 @@ npm run test:coverage
 npm run test:e2e
 npm run build
 npm audit --audit-level=low
+make container-scan
 ```
 
 Current coverage state:
@@ -602,6 +603,7 @@ Current coverage state:
 | Browser E2E workflow | Playwright Chromium pass |
 | Full npm audit | 0 vulnerabilities |
 | Go vulnerability scan | govulncheck pass: 0 vulnerabilities |
+| Container high/critical scan | Docker Scout gate pass |
 
 ## Implemented Capabilities
 

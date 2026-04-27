@@ -192,7 +192,10 @@ go test -coverprofile dist/coverage.out ./...
 go tool cover -func dist/coverage.out
 go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 cd webui && npm run lint && npm run test:coverage && npm run test:e2e && npm run build && npm audit --audit-level=low
+make container-scan
 ```
+
+CI fails the container job on critical or high CVEs for both `runtime` and `runtime-ssh`. Medium findings remain visible in the scanner output so operators can track base-image remediation without blocking routine builds.
 
 The release workflow builds cross-platform binaries and uploads a SHA-256 checksum, keyless Sigstore signature, and signing certificate beside each artifact. Before tagging a release, verify the generated binary embeds the current WebUI and returns the expected `/version` metadata.
 

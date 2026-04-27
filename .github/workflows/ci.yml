@@ -56,4 +56,18 @@ jobs:
         working-directory: webui
       - run: rm -rf internal/server/dist && cp -r webui/dist internal/server/dist
       - run: docker build --target runtime --build-arg VERSION=ci --build-arg COMMIT=${{ github.sha }} --build-arg DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" -t mizan:ci .
+      - uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: local://mizan:ci
+          only-severities: critical,high
+          exit-code: true
+          write-comment: false
       - run: docker build --target runtime-ssh --build-arg VERSION=ci --build-arg COMMIT=${{ github.sha }} --build-arg DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" -t mizan:ssh-ci .
+      - uses: docker/scout-action@v1
+        with:
+          command: cves
+          image: local://mizan:ssh-ci
+          only-severities: critical,high
+          exit-code: true
+          write-comment: false

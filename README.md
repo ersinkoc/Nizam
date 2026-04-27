@@ -170,6 +170,12 @@ npm run build
 npm audit --audit-level=low
 ```
 
+Container high/critical gate:
+
+```sh
+make container-scan
+```
+
 Current verified gates:
 
 | Area | Status |
@@ -183,6 +189,7 @@ Current verified gates:
 | Browser E2E workflow | Playwright Chromium pass: import, edit, validate, batch approval, rollback dry-run, audit, monitor |
 | Full npm audit | 0 vulnerabilities |
 | Go vulnerability scan | govulncheck pass: 0 vulnerabilities |
+| Container high/critical scan | Docker Scout gate pass |
 
 Frontend coverage is scoped to `webui/src/lib/**/*.ts` in `webui/vitest.config.ts`; backend coverage is measured across `./...`.
 
