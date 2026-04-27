@@ -831,6 +831,7 @@ func deployCmd(ctx context.Context, args []string, stdout, stderr io.Writer) err
 func deployDrillCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("deploy drill", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	summary := fs.Bool("summary", false, "write compact drill summary JSON")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -841,6 +842,15 @@ func deployDrillCmd(ctx context.Context, args []string, stdout, stderr io.Writer
 	encoder := json.NewEncoder(stdout)
 	encoder.SetIndent("", "  ")
 	encoder.SetEscapeHTML(false)
+	if *summary {
+		if err := encoder.Encode(deploy.SummarizeDrill(report)); err != nil {
+			return err
+		}
+		if report.Status != "success" {
+			return errors.New("deploy drill failed")
+		}
+		return nil
+	}
 	if err := encoder.Encode(report); err != nil {
 		return err
 	}
@@ -1717,7 +1727,7 @@ Usage:
   mizan deploy --project <id> --target-id <target-id>
   mizan deploy --project <id> --cluster-id <cluster-id> [--batch 1]
   mizan deploy --project <id> --cluster-id <cluster-id> --execute --confirm-snapshot <snapshot_hash> --approved-by alice,bob
-  mizan deploy drill
+  mizan deploy drill [--summary]
   mizan approval request --project <id> --cluster-id <cluster-id> [--batch 1]
   mizan approval approve --project <id> --actor alice <approval-request-id>
   mizan deploy --project <id> --approval-request-id <approval-request-id> --execute

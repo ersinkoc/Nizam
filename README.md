@@ -97,7 +97,7 @@ go run ./cmd/mizan generate --project <id> --target haproxy
 go run ./cmd/mizan validate --project <id> --target nginx
 go run ./cmd/mizan deploy --project <id> --target-id <target-id>
 go run ./cmd/mizan deploy --project <id> --cluster-id <cluster-id> --batch 1
-go run ./cmd/mizan deploy drill
+go run ./cmd/mizan deploy drill --summary
 go run ./cmd/mizan approval request --project <id> --cluster-id <cluster-id> --batch 1
 go run ./cmd/mizan approval approve --project <id> --actor alice <approval-request-id>
 go run ./cmd/mizan approval approve --project <id> --actor bob <approval-request-id>
@@ -162,6 +162,11 @@ Deployment examples live under `deploy/`:
 - `deploy/systemd/mizan.service`
 - `deploy/nginx/mizan.conf`
 
+Production and drill runbooks live under `docs/`:
+
+- `docs/PRODUCTION.md`
+- `docs/STAGING-DRILLS.md`
+
 ## Test and Coverage
 
 Backend:
@@ -200,6 +205,12 @@ Local deploy fault-injection drill:
 
 ```sh
 make deploy-drill
+```
+
+For a full step-by-step simulated failure report, run:
+
+```sh
+go run ./cmd/mizan deploy drill
 ```
 
 Workflow-only gate:

@@ -302,6 +302,13 @@ func TestProjectGenerateValidateAndSnapshotCommands(t *testing.T) {
 		t.Fatalf("deploy drill output unexpected: %s", stdout.String())
 	}
 	stdout.Reset()
+	if err := Run(context.Background(), []string{"deploy", "drill", "--summary"}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte(`"totals"`)) || bytes.Contains(stdout.Bytes(), []byte(`"commands"`)) {
+		t.Fatalf("deploy drill summary output unexpected: %s", stdout.String())
+	}
+	stdout.Reset()
 	if err := Run(context.Background(), []string{"monitor", "snapshot", "--home", home, "--project", created.Project.ID}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}

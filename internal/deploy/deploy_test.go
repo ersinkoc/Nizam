@@ -478,6 +478,13 @@ func TestRunDrill(t *testing.T) {
 	if report.Status != "success" || len(report.Scenarios) != 4 {
 		t.Fatalf("unexpected drill report: %+v", report)
 	}
+	summary := SummarizeDrill(report)
+	if summary.Status != "success" || summary.Totals.Scenarios != 4 || summary.Totals.FailedScenarios != 0 || summary.Totals.DeploymentFailures != 4 {
+		t.Fatalf("unexpected drill summary: %+v", summary)
+	}
+	if summary.Totals.RollbackAttempted != 2 || summary.Totals.RollbackSucceeded != 2 || summary.Totals.CleanupAttempted != 4 || summary.Totals.CleanupFailed != 1 {
+		t.Fatalf("unexpected drill summary totals: %+v", summary.Totals)
+	}
 	for _, scenario := range report.Scenarios {
 		if scenario.Status != "success" || len(scenario.Steps) == 0 || len(scenario.Commands) == 0 {
 			t.Fatalf("unexpected drill scenario: %+v", scenario)

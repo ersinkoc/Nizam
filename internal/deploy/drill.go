@@ -15,6 +15,34 @@ type DrillReport struct {
 	Scenarios []DrillScenarioResult `json:"scenarios"`
 }
 
+type DrillSummary struct {
+	Status    string                 `json:"status"`
+	Scenarios []DrillScenarioSummary `json:"scenarios"`
+	Totals    DrillSummaryTotals     `json:"totals"`
+}
+
+type DrillScenarioSummary struct {
+	Name             string        `json:"name"`
+	Status           string        `json:"status"`
+	DeploymentStatus string        `json:"deployment_status"`
+	Message          string        `json:"message,omitempty"`
+	Rollback         RollbackStats `json:"rollback"`
+	Cleanup          CleanupStats  `json:"cleanup"`
+	StepCount        int           `json:"step_count"`
+}
+
+type DrillSummaryTotals struct {
+	Scenarios          int `json:"scenarios"`
+	FailedScenarios    int `json:"failed_scenarios"`
+	RollbackAttempted  int `json:"rollback_attempted"`
+	RollbackSucceeded  int `json:"rollback_succeeded"`
+	RollbackFailed     int `json:"rollback_failed"`
+	CleanupAttempted   int `json:"cleanup_attempted"`
+	CleanupSucceeded   int `json:"cleanup_succeeded"`
+	CleanupFailed      int `json:"cleanup_failed"`
+	DeploymentFailures int `json:"deployment_failures"`
+}
+
 type DrillScenarioResult struct {
 	Name             string        `json:"name"`
 	Status           string        `json:"status"`
@@ -66,6 +94,35 @@ func RunDrill(ctx context.Context) DrillReport {
 		report.Scenarios = append(report.Scenarios, result)
 	}
 	return report
+}
+
+func SummarizeDrill(report DrillReport) DrillSummary {
+	summary := DrillSummary{Status: report.Status, Scenarios: []DrillScenarioSummary{}}
+	for _, scenario := range report.Scenarios {
+		if scenario.Status != "success" {
+			summary.Totals.FailedScenarios++
+		}
+		if scenario.DeploymentStatus == "failed" {
+			summary.Totals.DeploymentFailures++
+		}
+		summary.Totals.Scenarios++
+		summary.Totals.RollbackAttempted += scenario.Rollback.Attempted
+		summary.Totals.RollbackSucceeded += scenario.Rollback.Succeeded
+		summary.Totals.RollbackFailed += scenario.Rollback.Failed
+		summary.Totals.CleanupAttempted += scenario.Cleanup.Attempted
+		summary.Totals.CleanupSucceeded += scenario.Cleanup.Succeeded
+		summary.Totals.CleanupFailed += scenario.Cleanup.Failed
+		summary.Scenarios = append(summary.Scenarios, DrillScenarioSummary{
+			Name:             scenario.Name,
+			Status:           scenario.Status,
+			DeploymentStatus: scenario.DeploymentStatus,
+			Message:          scenario.Message,
+			Rollback:         scenario.Rollback,
+			Cleanup:          scenario.Cleanup,
+			StepCount:        len(scenario.Steps),
+		})
+	}
+	return summary
 }
 
 func drillScenarios() []drillScenario {
