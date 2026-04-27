@@ -4,6 +4,18 @@ This document tracks what "production ready" means for Mizan and how to operate 
 
 Mizan is local-first and single-binary by design. A production deployment should still be treated as an operator-facing control plane: protect the HTTP surface, back up the data directory, validate generated configs before reloads, and keep an audit trail.
 
+## Release Status
+
+Mizan is release-ready for the documented v0.1 scope:
+
+- Local-first project, IR, snapshot, target, approval, audit, monitor, backup, and secret-vault workflows are implemented.
+- WebUI and CLI flows cover create/import, edit, generate, validate, dry-run deploy planning, approvals, monitor snapshots/streams, audit filters, and CSV export.
+- CLI `deploy --execute` is implemented through the local `ssh` command with vault-backed username/private-key support and snapshot confirmation.
+- The default container is a minimal WebUI/API runtime; the separate `runtime-ssh` image is available when remote deployment execution must happen inside the container.
+- CI gates Go tests, frontend lint/coverage/build/E2E, Go/npm vulnerability scans, and high/critical Docker Scout CVEs for both runtime images.
+
+The boundaries below are intentional v0.1 scope limits, not open blockers for the current release.
+
 ## Runtime Baseline
 
 Recommended serve command:
@@ -188,21 +200,20 @@ Treat `rollback.failed > 0` as an incident signal. Inspect the per-step command 
 Production releases should pass:
 
 ```sh
-go test -coverprofile dist/coverage.out ./...
-go tool cover -func dist/coverage.out
-go run golang.org/x/vuln/cmd/govulncheck@latest ./...
-cd webui && npm run lint && npm run test:coverage && npm run test:e2e && npm run build && npm audit --audit-level=low
-make container-scan
+make release-check
 ```
+
+`make release-check` runs backend coverage, frontend coverage, browser E2E, Go/npm vulnerability scans, the embedded binary build, and high/critical Docker Scout gates for both runtime images. If Docker is unavailable on a local workstation, run the non-container gates directly and rely on CI for `container-scan`.
 
 CI fails the container job on critical or high CVEs for both `runtime` and `runtime-ssh`. Medium findings remain visible in the scanner output so operators can track base-image remediation without blocking routine builds.
 
 The release workflow builds cross-platform binaries and uploads a SHA-256 checksum, keyless Sigstore signature, and signing certificate beside each artifact. Before tagging a release, verify the generated binary embeds the current WebUI and returns the expected `/version` metadata.
 
-## Remaining Production Work
+## Supported Scope Boundaries
 
-These items should be completed before calling Mizan fully production ready:
+These are deliberate v0.1 boundaries:
 
-- Broader parser round-trip coverage for advanced HAProxy/Nginx directives beyond the supported v0 subset
-- Richer rollout controls: stronger multi-actor identity integration for approvals
-- Expanded browser E2E coverage for executed rollback failure simulation, conflict resolution, and multi-project streaming scenarios
+- HAProxy/Nginx import targets the documented v0 directive subset. Advanced vendor-specific directives may need manual IR editing after import.
+- Approval identity is operator-supplied and audit-recorded. External SSO/RBAC integration is out of scope for v0.1.
+- SSH execution delegates password/passphrase behavior to the local SSH environment, agent, or config. Mizan stores vault-backed usernames and private keys, not interactive passwords.
+- Browser E2E covers the main operator workflow. Deep fault-injection scenarios, such as real remote rollback command failure, should be validated in an environment-specific staging setup before first production rollout.

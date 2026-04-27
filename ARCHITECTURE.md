@@ -530,7 +530,7 @@ flowchart LR
   GeneratePanel -->|Generate/Validate| APIClient
 ```
 
-The frontend currently uses local React state and a small typed API client. A later phase can introduce TanStack Query/Zustand as originally planned, but the current app is intentionally simple and testable.
+The frontend intentionally uses local React state and a small typed API client. This keeps the v0.1 operator surface simple, fast to reason about, and easy to cover with browser E2E tests.
 
 ## Build and Runtime Packaging
 
@@ -702,25 +702,25 @@ mindmap
       monitor
 ```
 
-## Not Implemented Yet
+## Release Scope Boundaries
 
 ```mermaid
 flowchart LR
-  Credentials["Password/passphrase automation"]
-  Rollout["Advanced rollout orchestration"]
-  ProjectStream["Project SSE streams"]
-  SSE["SSE project/monitor streams"]
-  FullParser["Full round-trip parsers"]
-  Wizard["Full wizard UI"]
-  DiffUI["Rich snapshot diff UI"]
+  V01["v0.1 release-ready scope"]
+  Parser["Supported v0\nHAProxy/Nginx directive subset"]
+  Identity["Operator-supplied\napproval actor names"]
+  SSH["Local ssh command\nagent/config handles passphrases"]
+  E2E["Main browser\noperator workflow"]
 
-  Credentials --> Rollout
-  ProjectStream --> SSE
-  FullParser --> Wizard
-  DiffUI --> Wizard
+  V01 --> Parser
+  V01 --> Identity
+  V01 --> SSH
+  V01 --> E2E
 ```
 
-The codebase is now a working product foundation, not yet a full v1 implementation. Target and cluster persistence plus dry-run deployment planning exist, persisted approval requests can bind a rollout to a specific snapshot and be reviewed from the WebUI or CLI, CLI deployments can execute over the local `ssh` command with vault-backed username/private key credentials, selectable cluster batches, approval count gates, and optional rollback hooks with rollback summary counts in deploy results and audit metadata. HAProxy/Nginx monitor snapshots can be collected from HTTP endpoints, and monitor plus project state can be streamed over SSE. Browser E2E now covers import, IR edit, validation, target registration, cluster batch approval, rollback dry-run visibility, audit, and monitor. Password/passphrase automation, stronger multi-actor identity integration, full advanced parser round-trip, richer wizard editing, browser-level executed rollback failure simulation, and deeper diff UI are still future work.
+The codebase is release-ready for the documented v0.1 scope. Target and cluster persistence, dry-run deployment planning, persisted approval requests, snapshot-bound execute confirmation, CLI SSH execution with vault-backed username/private-key credentials, selectable cluster batches, approval gates, rollback hooks, rollback summary audit metadata, HAProxy/Nginx monitor collectors, monitor streams, project state streams, filtered audit, CSV export, backups, and production packaging are implemented.
+
+The remaining boundaries are explicit product limits rather than release blockers: import covers the supported v0 directive subset rather than every possible HAProxy/Nginx directive, approval identity is operator-supplied rather than backed by SSO/RBAC, SSH password/passphrase automation is delegated to the local SSH environment, and deep remote fault injection should be validated in an operator's staging environment before first production rollout.
 
 ## Design Principles
 

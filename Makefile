@@ -2,7 +2,7 @@ VERSION ?= 0.1.0-dev
 COMMIT ?= local
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
-.PHONY: dev ui binary docker docker-ssh container-scan test coverage lint vuln e2e clean
+.PHONY: dev ui binary docker docker-ssh container-scan test coverage lint vuln e2e release-check clean
 
 dev:
 	go run ./cmd/mizan serve
@@ -45,6 +45,8 @@ vuln:
 
 e2e:
 	cd webui && npm run test:e2e
+
+release-check: coverage vuln e2e binary container-scan
 
 clean:
 	rm -rf dist webui/dist internal/server/dist/assets

@@ -2,7 +2,7 @@
 
 Mizan is a local-first visual configuration architect for HAProxy and Nginx. It runs as a single Go binary, serves an embedded React/Vite WebUI, stores projects as inspectable JSON under `~/.mizan`, and translates one Universal IR into target-specific HAProxy or Nginx configuration.
 
-The current codebase is a working product foundation with backend statement coverage at 96.7%.
+The current codebase is release-ready for the documented v0.1 scope with backend statement coverage at 96.7%, browser E2E coverage for the main operator workflow, clean Go/npm vulnerability scans, and a high/critical container CVE gate.
 
 ## What Works Today
 
@@ -176,6 +176,12 @@ Container high/critical gate:
 make container-scan
 ```
 
+Full release gate:
+
+```sh
+make release-check
+```
+
 Current verified gates:
 
 | Area | Status |
@@ -197,4 +203,4 @@ Frontend coverage is scoped to `webui/src/lib/**/*.ts` in `webui/vitest.config.t
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the current architecture, request flows, storage layout, coverage status, and Mermaid diagrams.
 
-For production hardening and the remaining readiness checklist, see [docs/PRODUCTION.md](docs/PRODUCTION.md).
+For production hardening, release gates, and supported scope boundaries, see [docs/PRODUCTION.md](docs/PRODUCTION.md).
