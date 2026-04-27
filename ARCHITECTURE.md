@@ -4,6 +4,17 @@ Mizan is a local-first visual configuration architect for HAProxy and Nginx. It 
 
 ## Current Project Status
 
+Latest verified release: `v0.1.4` from commit `abc0d2b`. The release workflow published 20 assets: Linux, macOS, and Windows binaries plus SHA-256 checksums, keyless Sigstore signatures, and signing certificates.
+
+Current engineering baseline:
+
+| Area | Baseline |
+|---|---|
+| Go module/toolchain | `go 1.25.0` with `go1.25.9` toolchain |
+| Docker build image | `golang:1.26.2-alpine` |
+| WebUI dependencies | React 19, TypeScript 6.0, Vite 8, lucide-react 1.11 |
+| GitHub Actions | `checkout@v6`, `setup-go@v6`, `setup-node@v6`, `upload-artifact@v7` |
+
 ```mermaid
 flowchart LR
   Foundation["Foundation\nGo CLI + HTTP server\nEmbedded React UI"]:::done

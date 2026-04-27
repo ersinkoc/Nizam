@@ -5,7 +5,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . ./
 
-ARG VERSION=0.1.0-dev
+ARG VERSION=0.1.5-dev
 ARG COMMIT=container
 ARG DATE=unknown
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \

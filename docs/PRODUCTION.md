@@ -8,11 +8,21 @@ Mizan is local-first and single-binary by design. A production deployment should
 
 Mizan is release-ready for the documented v0.1 scope:
 
+- Latest verified release: `v0.1.4`, published from commit `abc0d2b` with 20 GitHub Release assets for Linux, macOS, and Windows binaries plus checksums and Sigstore metadata.
 - Local-first project, IR, snapshot, target, approval, audit, monitor, backup, and secret-vault workflows are implemented.
 - WebUI and CLI flows cover create/import, edit, generate, validate, dry-run deploy planning, approvals, monitor snapshots/streams, audit filters, and CSV export.
 - CLI `deploy --execute` is implemented through the local `ssh` command with vault-backed username/private-key support and snapshot confirmation.
 - The default container is a minimal WebUI/API runtime; the separate `runtime-ssh` image is available when remote deployment execution must happen inside the container.
 - CI gates Go tests, frontend lint/coverage/build/E2E, Go/npm vulnerability scans, and high/critical container CVEs for both runtime images.
+
+Current build baseline:
+
+| Area | Baseline |
+|---|---|
+| Go module/toolchain | `go 1.25.0` with `go1.25.9` toolchain |
+| Docker build image | `golang:1.26.2-alpine` |
+| WebUI dependencies | React 19, TypeScript 6.0, Vite 8 |
+| GitHub Actions | `checkout@v6`, `setup-go@v6`, `setup-node@v6`, `upload-artifact@v7` |
 
 The boundaries below are intentional v0.1 scope limits, not open blockers for the current release.
 

@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version to embed when running manually, for example 0.1.0
+        description: Version to embed when running manually, for example 0.1.5-dev
         required: false
-        default: 0.1.0-dev
+        default: 0.1.5-dev
 
 permissions:
   contents: write
@@ -46,7 +46,7 @@ jobs:
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             version="${GITHUB_REF_NAME#v}"
           else
-            version="${{ github.event.inputs.version || '0.1.0-dev' }}"
+            version="${{ github.event.inputs.version || '0.1.5-dev' }}"
           fi
           echo "MIZAN_VERSION=${version}" >> "$GITHUB_ENV"
           echo "MIZAN_COMMIT=${GITHUB_SHA}" >> "$GITHUB_ENV"

@@ -4,6 +4,8 @@ Mizan is a local-first visual configuration architect for HAProxy and Nginx. It 
 
 The current codebase is release-ready for the documented v0.1 scope with backend statement coverage at 96.7%, browser E2E coverage for the main operator workflow, clean Go/npm vulnerability scans, and a high/critical container CVE gate.
 
+Latest verified release: `v0.1.4`, published from commit `abc0d2b`, with signed/checksummed binaries for Linux, macOS, and Windows.
+
 ## What Works Today
 
 - Single-binary Go CLI and HTTP server: `mizan serve`
@@ -109,6 +111,15 @@ go run ./cmd/mizan monitor stream --project <id> --limit 10 --interval 5s
 ```
 
 ## Build
+
+Current build baseline:
+
+| Area | Baseline |
+|---|---|
+| Go module/toolchain | `go 1.25.0` with `go1.25.9` toolchain |
+| CI/release actions | `checkout@v6`, `setup-go@v6`, `setup-node@v6`, `upload-artifact@v7` |
+| Container builder | `golang:1.26.2-alpine` |
+| WebUI stack | React 19, TypeScript 6.0, Vite 8 |
 
 With `make`:
 
