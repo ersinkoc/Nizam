@@ -165,7 +165,7 @@ func TestParseFileDetectionAndErrors(t *testing.T) {
 func TestParserEdgeBranches(t *testing.T) {
 	haproxyCfg := `
 frontend web
-  bind :80
+  bind :80 # public listener
   acl host_acl hdr(host) -i example.com
   use_backend be_app if host_acl
   use_backend be_other
@@ -185,14 +185,17 @@ backend be_other
 	if model.Servers[0].Port != 80 || model.Servers[1].Port != 80 {
 		t.Fatalf("expected fallback ports, got %+v", model.Servers)
 	}
+	if model.Frontends[0].Bind != ":80" {
+		t.Fatalf("expected HAProxy inline comments to be stripped from bind, got %q", model.Frontends[0].Bind)
+	}
 
 	nginxCfg := `
 http {
   upstream be_app {
-    server 10.0.0.1:8080;
+    server 10.0.0.1:8080; # primary
   }
   server {
-    listen 80;
+    listen 127.0.0.1:8081;
     location /api/ {
       proxy_pass http://be_app;
     }
@@ -205,6 +208,9 @@ http {
 	}
 	if len(nginxModel.Rules) != 1 || nginxModel.Frontends[0].DefaultBackend != "" {
 		t.Fatalf("unexpected nginx location parse: %+v", nginxModel)
+	}
+	if nginxModel.Servers[0].Port != 8080 || nginxModel.Frontends[0].Bind != "127.0.0.1:8081" {
+		t.Fatalf("expected Nginx inline comment/listen normalization, got bind=%q servers=%+v", nginxModel.Frontends[0].Bind, nginxModel.Servers)
 	}
 }
 

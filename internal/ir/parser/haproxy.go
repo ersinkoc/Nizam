@@ -18,6 +18,7 @@ func ParseHAProxy(config string) (*ir.Model, error) {
 	for scanner.Scan() {
 		raw := scanner.Text()
 		line := strings.TrimPrefix(strings.TrimSpace(raw), "\ufeff")
+		line = stripInlineComment(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}

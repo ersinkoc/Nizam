@@ -33,3 +33,14 @@ func normalizeID(prefix, name string) string {
 	}
 	return prefix + "_" + name
 }
+
+func stripInlineComment(line string) string {
+	idx := strings.Index(line, "#")
+	if idx < 0 {
+		return strings.TrimSpace(line)
+	}
+	if idx == 0 || line[idx-1] == ' ' || line[idx-1] == '\t' {
+		return strings.TrimSpace(line[:idx])
+	}
+	return strings.TrimSpace(line)
+}

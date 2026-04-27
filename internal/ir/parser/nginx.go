@@ -16,6 +16,7 @@ func ParseNginx(config string) (*ir.Model, error) {
 
 	for scanner.Scan() {
 		line := strings.TrimPrefix(strings.TrimSpace(scanner.Text()), "\ufeff")
+		line = stripInlineComment(line)
 		line = strings.TrimSuffix(line, ";")
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -81,7 +82,7 @@ func parseNginxServerLine(m *ir.Model, fe *ir.Frontend, fields []string) {
 	switch fields[0] {
 	case "listen":
 		if len(fields) > 1 {
-			fe.Bind = ":" + fields[1]
+			fe.Bind = normalizeNginxListenBind(fields[1])
 		}
 		if len(fields) < 3 {
 			return
@@ -107,6 +108,17 @@ func parseNginxServerLine(m *ir.Model, fe *ir.Frontend, fields []string) {
 			tls.KeyPath = fields[1]
 		}
 	}
+}
+
+func normalizeNginxListenBind(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if strings.Contains(value, ":") {
+		return value
+	}
+	return ":" + value
 }
 
 func parseNginxLocationLine(m *ir.Model, fe *ir.Frontend, location string, fields []string) {
