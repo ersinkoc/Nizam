@@ -88,6 +88,14 @@ test('operator can import, edit, validate, request approval, preview deploy, aud
   await expect(page.locator('.audit-list')).toContainText('approval.request');
   await expect(page.locator('.audit-list')).toContainText('approval.approve');
   await expect(page.locator('.audit-list')).not.toContainText('deploy.run');
+  const [approvalCSV] = await Promise.all([
+    page.waitForEvent('download'),
+    page.locator('.audit-panel').getByRole('button', { name: /CSV/ }).click()
+  ]);
+  const approvalCSVURL = new URL(approvalCSV.url());
+  expect(approvalCSVURL.pathname).toMatch(/\/audit\.csv$/);
+  expect(approvalCSVURL.searchParams.get('limit')).toBe('1000');
+  expect(approvalCSVURL.searchParams.get('action_prefix')).toBe('approval.');
 
   await auditFilters.getByRole('button', { name: /Reset/ }).click();
   await auditFilters.getByLabel('Audit batch').fill('1');
@@ -97,6 +105,13 @@ test('operator can import, edit, validate, request approval, preview deploy, aud
   await expect(page.locator('.audit-list')).toContainText('batch 1');
   await expect(page.locator('.audit-list')).toContainText('dry-run');
   await expect(page.locator('.audit-list')).not.toContainText('approval.approve');
+  const [deployCSV] = await Promise.all([
+    page.waitForEvent('download'),
+    page.locator('.audit-panel').getByRole('button', { name: /CSV/ }).click()
+  ]);
+  const deployCSVURL = new URL(deployCSV.url());
+  expect(deployCSVURL.searchParams.get('batch')).toBe('1');
+  expect(deployCSVURL.searchParams.get('dry_run')).toBe('true');
   await auditFilters.getByRole('button', { name: /Reset/ }).click();
 
   await expect(page.locator('.monitor-panel')).toContainText('Unknown');
