@@ -207,7 +207,7 @@ make release-check
 
 CI fails the container job on critical or high CVEs for both `runtime` and `runtime-ssh`. Medium findings remain visible in the scanner output so operators can track base-image remediation without blocking routine builds.
 
-The release workflow builds cross-platform binaries and uploads a SHA-256 checksum, keyless Sigstore signature, and signing certificate beside each artifact. Before tagging a release, verify the generated binary embeds the current WebUI and returns the expected `/version` metadata.
+The release workflow runs when a `v*` tag is pushed, and it can also be started manually from GitHub Actions. It builds cross-platform binaries, embeds the release version/commit/date metadata, and uploads a SHA-256 checksum, keyless Sigstore signature, and signing certificate beside each artifact. Before tagging a release, verify the generated binary embeds the current WebUI and returns the expected `/version` metadata.
 
 ## Supported Scope Boundaries
 

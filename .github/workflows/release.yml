@@ -1,7 +1,15 @@
 name: Release
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: Version to embed when running manually, for example 0.1.0
+        required: false
+        default: 0.1.0-dev
 
 permissions:
   contents: read
@@ -33,7 +41,20 @@ jobs:
       - run: npm run build
         working-directory: webui
       - run: rm -rf internal/server/dist && cp -r webui/dist internal/server/dist
-      - run: GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 go build -trimpath -o dist/mizan-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/mizan
+      - name: Resolve build metadata
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="${{ github.event.inputs.version || '0.1.0-dev' }}"
+          fi
+          echo "MIZAN_VERSION=${version}" >> "$GITHUB_ENV"
+          echo "MIZAN_COMMIT=${GITHUB_SHA}" >> "$GITHUB_ENV"
+          echo "MIZAN_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+      - run: |
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 go build -trimpath \
+            -ldflags="-s -w -X github.com/mizanproxy/mizan/internal/version.Version=${MIZAN_VERSION} -X github.com/mizanproxy/mizan/internal/version.Commit=${MIZAN_COMMIT} -X github.com/mizanproxy/mizan/internal/version.Date=${MIZAN_DATE}" \
+            -o dist/mizan-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/mizan
       - run: cd dist && sha256sum mizan-${{ matrix.goos }}-${{ matrix.goarch }} > mizan-${{ matrix.goos }}-${{ matrix.goarch }}.sha256
       - run: cosign sign-blob --yes --output-signature dist/mizan-${{ matrix.goos }}-${{ matrix.goarch }}.sig --output-certificate dist/mizan-${{ matrix.goos }}-${{ matrix.goarch }}.pem dist/mizan-${{ matrix.goos }}-${{ matrix.goarch }}
       - uses: actions/upload-artifact@v4
