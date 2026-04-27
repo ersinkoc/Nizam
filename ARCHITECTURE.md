@@ -4,7 +4,7 @@ Mizan is a local-first visual configuration architect for HAProxy and Nginx. It 
 
 ## Current Project Status
 
-Latest verified release: `v0.1.5` from commit `87c7a4f`. The release workflow published 20 assets: Linux, macOS, and Windows binaries plus SHA-256 checksums, keyless Sigstore signatures, and signing certificates.
+Latest verified release: `v0.1.6` from commit `2ce1688`. The release workflow published 20 assets: Linux, macOS, and Windows binaries plus SHA-256 checksums, keyless Sigstore signatures, and signing certificates.
 
 Current engineering baseline:
 

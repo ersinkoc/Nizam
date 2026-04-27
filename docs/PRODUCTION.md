@@ -8,7 +8,7 @@ Mizan is local-first and single-binary by design. A production deployment should
 
 Mizan is release-ready for the documented v0.1 scope:
 
-- Latest verified release: `v0.1.5`, published from commit `87c7a4f` with 20 GitHub Release assets for Linux, macOS, and Windows binaries plus checksums and Sigstore metadata.
+- Latest verified release: `v0.1.6`, published from commit `2ce1688` with 20 GitHub Release assets for Linux, macOS, and Windows binaries plus checksums and Sigstore metadata.
 - Local-first project, IR, snapshot, target, approval, audit, monitor, backup, and secret-vault workflows are implemented.
 - WebUI and CLI flows cover create/import, edit, generate, validate, dry-run deploy planning, approvals, monitor snapshots/streams, audit filters, and CSV export.
 - CLI `deploy --execute` is implemented through the local `ssh` command with vault-backed username/private-key support and snapshot confirmation.
@@ -218,13 +218,13 @@ make release-check
 Tag-triggered GitHub Releases automatically verify the uploaded binaries, checksum files, and keyless Sigstore signatures after publish. To run the same check locally, verify the uploaded binaries and checksum files:
 
 ```powershell
-.\scripts\verify-release.ps1 -Tag v0.1.5
+.\scripts\verify-release.ps1 -Tag v0.1.6
 ```
 
 When `cosign` is available, verify the keyless Sigstore signatures as well:
 
 ```powershell
-.\scripts\verify-release.ps1 -Tag v0.1.5 -VerifySignatures
+.\scripts\verify-release.ps1 -Tag v0.1.6 -VerifySignatures
 ```
 
 `make release-check` runs GitHub Actions workflow lint, backend coverage, frontend coverage, browser E2E, Go/npm vulnerability scans, the embedded binary build, and high/critical Docker Scout gates for both runtime images. CI runs the same actionlint check against GitHub Actions workflow files. If Docker is unavailable on a local workstation, run the non-container gates directly and rely on CI's Anchore/Grype image scan.

@@ -4,7 +4,7 @@ Mizan is a local-first visual configuration architect for HAProxy and Nginx. It 
 
 The current codebase is release-ready for the documented v0.1 scope with backend statement coverage at 96.7%, browser E2E coverage for the main operator workflow, clean Go/npm vulnerability scans, and a high/critical container CVE gate.
 
-Latest verified release: `v0.1.5`, published from commit `87c7a4f`, with signed/checksummed binaries for Linux, macOS, and Windows.
+Latest verified release: `v0.1.6`, published from commit `2ce1688`, with signed/checksummed binaries for Linux, macOS, and Windows.
 
 ## What Works Today
 
@@ -204,7 +204,7 @@ make workflow-lint
 Verify a published GitHub Release:
 
 ```powershell
-.\scripts\verify-release.ps1 -Tag v0.1.5
+.\scripts\verify-release.ps1 -Tag v0.1.6
 ```
 
 Tag-triggered GitHub Releases run the same verification automatically after publish.
@@ -212,7 +212,7 @@ Tag-triggered GitHub Releases run the same verification automatically after publ
 If `cosign` is installed, also verify the keyless Sigstore signatures:
 
 ```powershell
-.\scripts\verify-release.ps1 -Tag v0.1.5 -VerifySignatures
+.\scripts\verify-release.ps1 -Tag v0.1.6 -VerifySignatures
 ```
 
 Current verified gates:
