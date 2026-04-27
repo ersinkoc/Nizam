@@ -730,7 +730,7 @@ flowchart LR
   V01 --> E2E
 ```
 
-The codebase is release-ready for the documented v0.1 scope. Target and cluster persistence, dry-run deployment planning, persisted approval requests, snapshot-bound execute confirmation, CLI SSH execution with vault-backed username/private-key credentials, selectable cluster batches, approval gates, rollback hooks, rollback summary audit metadata, HAProxy/Nginx monitor collectors, monitor streams, project state streams, filtered audit, CSV export, backups, and production packaging are implemented.
+The codebase is release-ready for the documented v0.1 scope. Target and cluster persistence, dry-run deployment planning, persisted approval requests, snapshot-bound execute confirmation, CLI SSH execution with vault-backed username/private-key credentials, selectable cluster batches, approval gates, rollback hooks, local deploy fault-injection drills, rollback summary audit metadata, HAProxy/Nginx monitor collectors, monitor streams, project state streams, filtered audit, CSV export, backups, and production packaging are implemented.
 
 The remaining boundaries are explicit product limits rather than release blockers: import covers the supported v0 directive subset rather than every possible HAProxy/Nginx directive, approval identity is operator-supplied rather than backed by SSO/RBAC, SSH password/passphrase automation is delegated to the local SSH environment, and deep remote fault injection should be validated in an operator's staging environment before first production rollout.
 

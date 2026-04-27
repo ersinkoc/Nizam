@@ -473,6 +473,34 @@ func TestRunTargetCleansUpAfterRemoteValidationFailure(t *testing.T) {
 	}
 }
 
+func TestRunDrill(t *testing.T) {
+	report := RunDrill(t.Context())
+	if report.Status != "success" || len(report.Scenarios) != 4 {
+		t.Fatalf("unexpected drill report: %+v", report)
+	}
+	for _, scenario := range report.Scenarios {
+		if scenario.Status != "success" || len(scenario.Steps) == 0 || len(scenario.Commands) == 0 {
+			t.Fatalf("unexpected drill scenario: %+v", scenario)
+		}
+	}
+	byName := map[string]DrillScenarioResult{}
+	for _, scenario := range report.Scenarios {
+		byName[scenario.Name] = scenario
+	}
+	if byName["remote_validation_failure_cleans_tmp"].Rollback.Planned != 0 || byName["remote_validation_failure_cleans_tmp"].Cleanup.Succeeded != 1 {
+		t.Fatalf("unexpected remote validation drill summary: %+v", byName["remote_validation_failure_cleans_tmp"])
+	}
+	if byName["install_failure_rolls_back_and_cleans_tmp"].Rollback.Succeeded != 1 || byName["install_failure_rolls_back_and_cleans_tmp"].Cleanup.Succeeded != 1 {
+		t.Fatalf("unexpected install failure drill summary: %+v", byName["install_failure_rolls_back_and_cleans_tmp"])
+	}
+	if byName["probe_failure_rolls_back_and_cleans_tmp"].Rollback.Succeeded != 1 || byName["probe_failure_rolls_back_and_cleans_tmp"].Cleanup.Succeeded != 1 {
+		t.Fatalf("unexpected probe failure drill summary: %+v", byName["probe_failure_rolls_back_and_cleans_tmp"])
+	}
+	if byName["cleanup_failure_is_incident_signal"].Cleanup.Failed != 1 || byName["cleanup_failure_is_incident_signal"].DeploymentStatus != "failed" {
+		t.Fatalf("unexpected cleanup failure drill summary: %+v", byName["cleanup_failure_is_incident_signal"])
+	}
+}
+
 func TestCommandsAndHelpers(t *testing.T) {
 	target := store.Target{Host: "edge.example.com", Port: 2222, User: "deployer", Engine: ir.EngineNginx, ConfigPath: "/etc/nginx/nginx.conf", ReloadCommand: "systemctl reload nginx", Sudo: true}
 	if got := uploadCommand(target, "/tmp/it's.cfg"); !strings.HasPrefix(got, "cat > ") || !strings.Contains(got, "'\"'\"'") {

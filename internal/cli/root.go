@@ -739,6 +739,9 @@ func validateCmd(ctx context.Context, args []string, stdout, stderr io.Writer) e
 }
 
 func deployCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	if len(args) > 0 && args[0] == "drill" {
+		return deployDrillCmd(ctx, args[1:], stdout, stderr)
+	}
 	fs := flag.NewFlagSet("deploy", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	home := fs.String("home", store.DefaultRoot(), "Mizan data directory")
@@ -823,6 +826,28 @@ func deployCmd(ctx context.Context, args []string, stdout, stderr io.Writer) err
 		},
 	})
 	return json.NewEncoder(stdout).Encode(result)
+}
+
+func deployDrillCmd(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	fs := flag.NewFlagSet("deploy drill", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("deploy drill does not accept positional arguments")
+	}
+	report := deploy.RunDrill(ctx)
+	encoder := json.NewEncoder(stdout)
+	encoder.SetIndent("", "  ")
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(report); err != nil {
+		return err
+	}
+	if report.Status != "success" {
+		return errors.New("deploy drill failed")
+	}
+	return nil
 }
 
 func deployCredentialProvider(home string, passphrase []byte) deploy.CredentialProvider {
@@ -1692,6 +1717,7 @@ Usage:
   mizan deploy --project <id> --target-id <target-id>
   mizan deploy --project <id> --cluster-id <cluster-id> [--batch 1]
   mizan deploy --project <id> --cluster-id <cluster-id> --execute --confirm-snapshot <snapshot_hash> --approved-by alice,bob
+  mizan deploy drill
   mizan approval request --project <id> --cluster-id <cluster-id> [--batch 1]
   mizan approval approve --project <id> --actor alice <approval-request-id>
   mizan deploy --project <id> --approval-request-id <approval-request-id> --execute

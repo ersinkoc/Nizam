@@ -97,6 +97,7 @@ go run ./cmd/mizan generate --project <id> --target haproxy
 go run ./cmd/mizan validate --project <id> --target nginx
 go run ./cmd/mizan deploy --project <id> --target-id <target-id>
 go run ./cmd/mizan deploy --project <id> --cluster-id <cluster-id> --batch 1
+go run ./cmd/mizan deploy drill
 go run ./cmd/mizan approval request --project <id> --cluster-id <cluster-id> --batch 1
 go run ./cmd/mizan approval approve --project <id> --actor alice <approval-request-id>
 go run ./cmd/mizan approval approve --project <id> --actor bob <approval-request-id>
@@ -193,6 +194,12 @@ Full release gate:
 
 ```sh
 make release-check
+```
+
+Local deploy fault-injection drill:
+
+```sh
+make deploy-drill
 ```
 
 Workflow-only gate:
