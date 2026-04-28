@@ -88,6 +88,16 @@ func TestServeAuthConfiguration(t *testing.T) {
 	if err := Run(context.Background(), []string{"serve", "--home", t.TempDir(), "--bind", "0.0.0.0:7891"}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("MIZAN_AUTH_TOKEN", "")
+	t.Setenv("MIZAN_READ_ONLY_TOKEN", "viewer-env")
+	stdout.Reset()
+	if err := Run(context.Background(), []string{"serve", "--home", t.TempDir(), "--bind", "0.0.0.0:7892"}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	if err := Run(context.Background(), []string{"serve", "--home", t.TempDir(), "--auth-token", "same", "--read-only-token", "same"}, &stdout, &stderr); err == nil {
+		t.Fatal("expected duplicate auth token error")
+	}
 	stdout.Reset()
 	if err := Run(context.Background(), []string{"serve", "--home", t.TempDir(), "--max-body-bytes", "1024", "--shutdown-timeout", "1s"}, &stdout, &stderr); err != nil {
 		t.Fatal(err)

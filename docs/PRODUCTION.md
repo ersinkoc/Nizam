@@ -46,6 +46,8 @@ MIZAN_AUTH_TOKEN="$(openssl rand -base64 32)" \
 mizan serve --bind 0.0.0.0:7890 --home /var/lib/mizan
 ```
 
+Use `MIZAN_AUTH_TOKEN` or `--auth-token` for admin access, and `MIZAN_READ_ONLY_TOKEN` or `--read-only-token` for viewer access. Viewer tokens can only use safe HTTP methods (`GET`, `HEAD`, and `OPTIONS`); mutating API calls return `403 Forbidden`. Built-in Basic auth is admin-only.
+
 For internet-facing use, put Mizan behind a TLS-terminating reverse proxy and keep the Mizan process bound to localhost or a private interface. The built-in HTTP server is hardened for local/private operation, but it does not terminate TLS.
 
 ## Deployment Options
@@ -68,6 +70,7 @@ Optional `/etc/mizan/mizan.env`:
 MIZAN_BIND=127.0.0.1:7890
 MIZAN_HOME=/var/lib/mizan
 MIZAN_AUTH_TOKEN=replace-with-secret-manager-value
+MIZAN_READ_ONLY_TOKEN=optional-read-only-secret-manager-value
 MIZAN_MAX_BODY_BYTES=10485760
 MIZAN_SHUTDOWN_TIMEOUT=10s
 ```
@@ -113,6 +116,7 @@ Before enabling it, replace `mizan.example.com` and the certificate paths in the
 The HTTP server applies:
 
 - Bearer or Basic auth for non-loopback binds
+- Read-only Bearer tokens for viewer access to safe HTTP methods without mutation rights
 - `/healthz` liveness and `/readyz` readiness; readiness verifies the configured data root is accessible
 - Security headers for all responses
 - `Cache-Control: no-store` for API, health, metrics, and version responses
@@ -261,6 +265,6 @@ Release and deployment automation can also run `mizan version --json` against a 
 These are deliberate v0.1 boundaries:
 
 - HAProxy/Nginx import targets the documented v0 directive subset. Bracketed IPv6 endpoints, quoted values, and supported nested Nginx contexts are covered; advanced vendor-specific directives may still need manual IR editing after import.
-- Approval identity is operator-supplied and audit-recorded. External SSO/RBAC integration is out of scope for v0.1.
+- Approval identity is operator-supplied and audit-recorded. Built-in admin/viewer token RBAC is available; external SSO integration remains out of scope for v0.1.
 - SSH execution delegates password/passphrase behavior to the local SSH environment, agent, or config. Mizan stores vault-backed usernames and private keys, not interactive passwords.
 - Browser E2E covers the main operator workflow. Deep fault-injection scenarios, such as real remote rollback command failure, should be validated in an environment-specific staging setup before first production rollout.

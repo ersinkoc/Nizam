@@ -145,6 +145,7 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	bind := fs.String("bind", "127.0.0.1:7890", "address to bind")
 	home := fs.String("home", store.DefaultRoot(), "Mizan data directory")
 	authToken := fs.String("auth-token", "", "bearer token required for HTTP access")
+	readOnlyToken := fs.String("read-only-token", "", "bearer token allowed to read HTTP resources without mutating state")
 	authBasic := fs.String("auth-basic", "", "basic auth credential as user:password")
 	maxBodyBytes := fs.Int64("max-body-bytes", server.DefaultMaxBodyBytes, "maximum HTTP request body size in bytes")
 	shutdownTimeout := fs.Duration("shutdown-timeout", 10*time.Second, "graceful shutdown timeout")
@@ -157,7 +158,10 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if *shutdownTimeout <= 0 {
 		return errors.New("--shutdown-timeout must be positive")
 	}
-	auth := server.AuthConfig{Token: firstNonEmpty(*authToken, os.Getenv("MIZAN_AUTH_TOKEN"))}
+	auth := server.AuthConfig{
+		Token:         firstNonEmpty(*authToken, os.Getenv("MIZAN_AUTH_TOKEN")),
+		ReadOnlyToken: firstNonEmpty(*readOnlyToken, os.Getenv("MIZAN_READ_ONLY_TOKEN")),
+	}
 	basic := firstNonEmpty(*authBasic, os.Getenv("MIZAN_AUTH_BASIC"))
 	if basic != "" {
 		user, password, err := server.ParseBasicCredential(basic)
@@ -167,8 +171,11 @@ func serve(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		auth.BasicUser = user
 		auth.BasicPassword = password
 	}
+	if err := auth.Validate(); err != nil {
+		return err
+	}
 	if server.RequiresAuth(*bind) && !auth.Enabled() {
-		return errors.New("auth is required when binding outside localhost; set --auth-token, --auth-basic, MIZAN_AUTH_TOKEN, or MIZAN_AUTH_BASIC")
+		return errors.New("auth is required when binding outside localhost; set --auth-token, --read-only-token, --auth-basic, MIZAN_AUTH_TOKEN, MIZAN_READ_ONLY_TOKEN, or MIZAN_AUTH_BASIC")
 	}
 	log := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	st := store.New(*home)
@@ -1797,7 +1804,7 @@ func usage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, `Mizan - visual config architect for HAProxy and Nginx
 
 Usage:
-  mizan serve [--bind 127.0.0.1:7890] [--max-body-bytes 10485760]
+  mizan serve [--bind 127.0.0.1:7890] [--auth-token secret] [--read-only-token secret] [--max-body-bytes 10485760]
   mizan project new --name edge-prod --engines haproxy,nginx
   mizan project import ./haproxy.cfg --name imported-edge
   mizan project export <id> [--out mizan-export.json]

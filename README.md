@@ -9,7 +9,7 @@ Latest verified release: `v0.1.6`, published from commit `2ce1688`, with signed/
 ## What Works Today
 
 - Single-binary Go CLI and HTTP server: `mizan serve`
-- Optional Bearer token or Basic auth for HTTP access, required when binding outside localhost
+- Optional admin Bearer token, read-only Bearer token, or Basic auth for HTTP access, required when binding outside localhost
 - Hardened HTTP defaults with security headers, request body limits, server timeouts, and graceful shutdown
 - Encrypted local secrets vault foundation using Argon2id-derived AES-GCM envelopes
 - Health, storage-backed readiness, version, and Prometheus-style `/metrics` endpoints with build, project, and HTTP request counters
@@ -55,8 +55,11 @@ When binding outside localhost, Mizan requires HTTP auth:
 
 ```sh
 go run ./cmd/mizan serve --bind 0.0.0.0:7890 --auth-token "$MIZAN_AUTH_TOKEN"
+go run ./cmd/mizan serve --bind 0.0.0.0:7890 --read-only-token "$MIZAN_READ_ONLY_TOKEN"
 go run ./cmd/mizan serve --bind 0.0.0.0:7890 --auth-basic operator:change-me
 ```
+
+`--auth-token` and `--auth-basic` grant admin access. `--read-only-token` grants viewer access for safe HTTP methods only (`GET`, `HEAD`, and `OPTIONS`); state-changing API calls return `403 Forbidden`.
 
 Runtime hardening controls:
 

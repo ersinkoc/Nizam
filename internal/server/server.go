@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/subtle"
 	"fmt"
 	"log/slog"
@@ -24,12 +25,20 @@ const DefaultMaxBodyBytes int64 = 10 << 20
 
 type AuthConfig struct {
 	Token         string
+	ReadOnlyToken string
 	BasicUser     string
 	BasicPassword string
 }
 
 func (cfg AuthConfig) Enabled() bool {
-	return cfg.Token != "" || (cfg.BasicUser != "" && cfg.BasicPassword != "")
+	return cfg.Token != "" || cfg.ReadOnlyToken != "" || (cfg.BasicUser != "" && cfg.BasicPassword != "")
+}
+
+func (cfg AuthConfig) Validate() error {
+	if cfg.Token != "" && cfg.ReadOnlyToken != "" && constantTimeEqual(cfg.Token, cfg.ReadOnlyToken) {
+		return fmt.Errorf("auth token and read-only token must be different")
+	}
+	return nil
 }
 
 func ParseBasicCredential(value string) (string, string, error) {
@@ -124,8 +133,17 @@ func limitRequestBody(maxBodyBytes int64, next http.Handler) http.Handler {
 
 func authenticator(cfg AuthConfig, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if authPublicPath(r.URL.Path) || cfg.authorized(r) {
+		if authPublicPath(r.URL.Path) {
 			next.ServeHTTP(w, r)
+			return
+		}
+		role, ok := cfg.authorize(r)
+		if ok {
+			if role == authRoleViewer && !safeMethod(r.Method) {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), authRoleContextKey{}, role)))
 			return
 		}
 		if cfg.BasicUser != "" {
@@ -140,17 +158,43 @@ func authPublicPath(path string) bool {
 }
 
 func (cfg AuthConfig) authorized(r *http.Request) bool {
+	_, ok := cfg.authorize(r)
+	return ok
+}
+
+func (cfg AuthConfig) authorize(r *http.Request) (authRole, bool) {
 	if cfg.Token != "" {
 		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if ok && constantTimeEqual(token, cfg.Token) {
-			return true
+			return authRoleAdmin, true
+		}
+	}
+	if cfg.ReadOnlyToken != "" {
+		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if ok && constantTimeEqual(token, cfg.ReadOnlyToken) {
+			return authRoleViewer, true
 		}
 	}
 	if cfg.BasicUser != "" && cfg.BasicPassword != "" {
 		user, password, ok := r.BasicAuth()
-		return ok && constantTimeEqual(user, cfg.BasicUser) && constantTimeEqual(password, cfg.BasicPassword)
+		if ok && constantTimeEqual(user, cfg.BasicUser) && constantTimeEqual(password, cfg.BasicPassword) {
+			return authRoleAdmin, true
+		}
 	}
-	return false
+	return "", false
+}
+
+type authRole string
+
+const (
+	authRoleAdmin  authRole = "admin"
+	authRoleViewer authRole = "viewer"
+)
+
+type authRoleContextKey struct{}
+
+func safeMethod(method string) bool {
+	return method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions
 }
 
 func constantTimeEqual(a, b string) bool {

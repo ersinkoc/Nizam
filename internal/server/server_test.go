@@ -81,7 +81,7 @@ func TestServerHardeningDefaultsAndBodyLimit(t *testing.T) {
 
 func TestServerAuth(t *testing.T) {
 	st := store.New(t.TempDir())
-	srv := New(Config{Auth: AuthConfig{Token: "secret", BasicUser: "operator", BasicPassword: "pass"}}, st, slog.Default())
+	srv := New(Config{Auth: AuthConfig{Token: "secret", ReadOnlyToken: "read-only", BasicUser: "operator", BasicPassword: "pass"}}, st, slog.Default())
 
 	for _, path := range []string{"/healthz", "/readyz"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -108,6 +108,30 @@ func TestServerAuth(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/version", nil)
+	req.Header.Set("Authorization", "Bearer read-only")
+	res = httptest.NewRecorder()
+	srv.Handler.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("read-only bearer get status=%d", res.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/projects", strings.NewReader(`{"name":"blocked"}`))
+	req.Header.Set("Authorization", "Bearer read-only")
+	res = httptest.NewRecorder()
+	srv.Handler.ServeHTTP(res, req)
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("read-only bearer post status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/projects", strings.NewReader(`{"name":"allowed"}`))
+	req.Header.Set("Authorization", "Bearer secret")
+	res = httptest.NewRecorder()
+	srv.Handler.ServeHTTP(res, req)
+	if res.Code != http.StatusCreated {
+		t.Fatalf("admin bearer post status=%d body=%s", res.Code, res.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/version", nil)
 	req.SetBasicAuth("operator", "pass")
 	res = httptest.NewRecorder()
 	srv.Handler.ServeHTTP(res, req)
@@ -125,6 +149,9 @@ func TestServerAuth(t *testing.T) {
 
 	if (AuthConfig{}).authorized(httptest.NewRequest(http.MethodGet, "/version", nil)) {
 		t.Fatal("empty auth config should not authorize")
+	}
+	if err := (AuthConfig{Token: "same", ReadOnlyToken: "same"}).Validate(); err == nil {
+		t.Fatal("expected duplicate token validation error")
 	}
 }
 
