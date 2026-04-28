@@ -93,6 +93,7 @@ go run ./cmd/mizan backup inspect --in mizan-backup.zip
 go run ./cmd/mizan backup restore --in mizan-backup.zip --home /tmp/mizan-restore
 go run ./cmd/mizan doctor --json
 go run ./cmd/mizan doctor --production --json
+go run ./cmd/mizan doctor --production --json --out production-doctor.json
 go run ./cmd/mizan snapshot list --project <id>
 go run ./cmd/mizan snapshot tag --project <id> --label release-1 <snapshot-ref>
 go run ./cmd/mizan target add --project <id> --name edge-01 --host 10.0.0.10 --engine haproxy --monitor-endpoint 'http://10.0.0.10:8404/;csv' --rollback-command 'cp /etc/haproxy/haproxy.cfg.bak /etc/haproxy/haproxy.cfg && systemctl reload haproxy'
@@ -274,12 +275,12 @@ Current verified gates:
 | Browser E2E workflow | Playwright Chromium pass: import, edit, validate, batch approval, rollback dry-run, audit, monitor |
 | GitHub Actions workflow lint | actionlint pass |
 | Deploy drill evidence gate | CI generates and verifies `staging-drill-summary.json` |
-| Production doctor | `mizan doctor --production --json` reports cluster gates, approvals, rollback, probes, monitoring, and target credential coverage |
+| Production doctor | `mizan doctor --production --json --out production-doctor.json` reports cluster gates, approvals, rollback, probes, monitoring, and target credential coverage |
 | Full npm audit | 0 vulnerabilities |
 | Go vulnerability scan | govulncheck pass: 0 vulnerabilities |
 | Container high/critical scan | Anchore/Grype CI gate pass; Docker Scout local gate pass |
 
-Frontend coverage is scoped to `webui/src/lib/**/*.ts` in `webui/vitest.config.ts`; backend coverage is measured across `./...`. `make release-check` also runs actionlint against `.github/workflows`, and CI archives the verified deploy drill summary as a build artifact.
+Frontend coverage is scoped to `webui/src/lib/**/*.ts` in `webui/vitest.config.ts`; backend coverage is measured across `./...`. `make release-check` also runs actionlint against `.github/workflows`, writes `dist/production-doctor.json`, and CI archives the verified deploy drill summary plus production doctor report as preflight evidence.
 
 For release or deployment scripts, use `mizan version --json` to verify the embedded `version`, `commit`, and `date` metadata before rollout.
 

@@ -164,6 +164,7 @@ Use this minimum gate before executing remote deployment:
 ```sh
 mizan doctor --home /var/lib/mizan
 mizan doctor --home /var/lib/mizan --production --json
+mizan doctor --home /var/lib/mizan --production --json --out production-doctor.json
 mizan generate --project <id> --target haproxy --out candidate.cfg
 mizan validate --project <id> --target haproxy
 mizan deploy --project <id> --target-id <target-id>
@@ -181,7 +182,7 @@ mizan monitor snapshot --project <id>
 mizan version --json
 ```
 
-Use the production doctor output as a machine-readable preflight before staging or release. It keeps the normal data-root, project integrity, secret, SSH, and native validator checks, then adds warnings for production hardening gaps: missing deployment targets or clusters, clusters without `gate_on_failure`, clusters with fewer than two required approvals, targets without `rollback_command`, targets without `post_reload_probe`, targets without `monitor_endpoint`, and targets without encrypted credential envelopes.
+Use the production doctor output as a machine-readable preflight before staging or release. It keeps the normal data-root, project integrity, secret, SSH, and native validator checks, then adds warnings for production hardening gaps: missing deployment targets or clusters, clusters without `gate_on_failure`, clusters with fewer than two required approvals, targets without `rollback_command`, targets without `post_reload_probe`, targets without `monitor_endpoint`, and targets without encrypted credential envelopes. Use `--out production-doctor.json` when the report must be archived with release or staging evidence.
 
 Use the `snapshot_hash` from the dry-run deployment result as the `--confirm-snapshot` value. If the project changes between preview and execution, Mizan rejects the execute request and forces a fresh dry run.
 
@@ -253,7 +254,7 @@ $cosign = Join-Path (go env GOPATH) 'bin\cosign.exe'
 .\scripts\verify-release.ps1 -Tag v0.1.6 -VerifySignatures -CosignPath $cosign
 ```
 
-`make release-check` runs GitHub Actions workflow lint, backend coverage, frontend coverage, browser E2E, Go/npm vulnerability scans, the local deploy drill evidence gate, the embedded binary build, and high/critical Docker Scout gates for both runtime images. CI runs the same actionlint check against GitHub Actions workflow files, generates `staging-drill-summary.json`, verifies it with `mizan deploy drill verify`, and archives the verified summary as a build artifact. If Docker is unavailable on a local workstation, run the non-container gates directly and rely on CI's Anchore/Grype image scan.
+`make release-check` runs GitHub Actions workflow lint, backend coverage, frontend coverage, browser E2E, Go/npm vulnerability scans, the local deploy drill evidence gate, production doctor report generation, the embedded binary build, and high/critical Docker Scout gates for both runtime images. CI runs the same actionlint check against GitHub Actions workflow files, generates `staging-drill-summary.json`, verifies it with `mizan deploy drill verify`, writes `production-doctor.json`, and archives both files as preflight evidence. If Docker is unavailable on a local workstation, run the non-container gates directly and rely on CI's Anchore/Grype image scan.
 
 CI fails the container job on critical or high CVEs for both `runtime` and `runtime-ssh`. Medium findings remain visible in the scanner output so operators can track base-image remediation without blocking routine builds.
 

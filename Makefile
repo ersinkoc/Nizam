@@ -3,7 +3,7 @@ COMMIT ?= local
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 ACTIONLINT_VERSION ?= v1.7.12
 
-.PHONY: dev ui binary docker docker-ssh container-scan workflow-lint test coverage lint vuln e2e deploy-drill release-check clean
+.PHONY: dev ui binary docker docker-ssh container-scan workflow-lint test coverage lint vuln e2e deploy-drill production-doctor release-check clean
 
 dev:
 	go run ./cmd/mizan serve
@@ -55,7 +55,12 @@ deploy-drill:
 	go run ./cmd/mizan deploy drill --summary --out dist/staging-drill-summary.json
 	go run ./cmd/mizan deploy drill verify --file dist/staging-drill-summary.json
 
-release-check: workflow-lint coverage vuln e2e deploy-drill binary container-scan
+production-doctor:
+	mkdir -p dist
+	rm -rf dist/doctor-home
+	go run ./cmd/mizan doctor --home dist/doctor-home --production --json --out dist/production-doctor.json
+
+release-check: workflow-lint coverage vuln e2e deploy-drill production-doctor binary container-scan
 
 clean:
 	rm -rf dist webui/dist internal/server/dist/assets

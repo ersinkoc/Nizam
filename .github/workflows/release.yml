@@ -38,6 +38,14 @@ jobs:
           mkdir -p dist
           go run ./cmd/mizan deploy drill --summary --out dist/staging-drill-summary.json
           go run ./cmd/mizan deploy drill verify --file dist/staging-drill-summary.json
+      - name: Write production doctor report
+        run: go run ./cmd/mizan doctor --home dist/doctor-home --production --json --out dist/production-doctor.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: preflight-evidence
+          path: |
+            dist/staging-drill-summary.json
+            dist/production-doctor.json
 
   build:
     needs: preflight

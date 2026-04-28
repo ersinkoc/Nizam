@@ -1418,26 +1418,48 @@ func doctorCmd(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	home := fs.String("home", store.DefaultRoot(), "Mizan data directory")
 	jsonOut := fs.Bool("json", false, "write machine-readable JSON")
 	production := fs.Bool("production", false, "include production hardening checks")
+	out := fs.String("out", "", "write doctor output to file")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	report := doctor.RunWithOptions(ctx, store.New(*home), nil, doctor.Options{Production: *production})
+	output := stdout
+	var outputFile *os.File
+	if *out != "" {
+		f, err := os.Create(*out)
+		if err != nil {
+			return err
+		}
+		output = f
+		outputFile = f
+		defer func() {
+			if outputFile != nil {
+				_ = outputFile.Close()
+			}
+		}()
+	}
 	if *jsonOut {
-		encoder := json.NewEncoder(stdout)
+		encoder := json.NewEncoder(output)
 		encoder.SetIndent("", "  ")
 		if err := encoder.Encode(report); err != nil {
 			return err
 		}
 	} else {
-		_, _ = fmt.Fprintf(stdout, "Mizan doctor: %s\n", report.Status)
-		_, _ = fmt.Fprintf(stdout, "root: %s\n", report.Root)
+		_, _ = fmt.Fprintf(output, "Mizan doctor: %s\n", report.Status)
+		_, _ = fmt.Fprintf(output, "root: %s\n", report.Root)
 		if report.Production {
-			_, _ = fmt.Fprintln(stdout, "production: enabled")
+			_, _ = fmt.Fprintln(output, "production: enabled")
 		}
-		_, _ = fmt.Fprintf(stdout, "projects: %d, targets: %d, clusters: %d\n", report.ProjectCount, report.TargetCount, report.ClusterCount)
+		_, _ = fmt.Fprintf(output, "projects: %d, targets: %d, clusters: %d\n", report.ProjectCount, report.TargetCount, report.ClusterCount)
 		for _, check := range report.Checks {
-			_, _ = fmt.Fprintf(stdout, "- [%s] %s: %s\n", check.Status, check.Name, check.Message)
+			_, _ = fmt.Fprintf(output, "- [%s] %s: %s\n", check.Status, check.Name, check.Message)
 		}
+	}
+	if outputFile != nil {
+		if err := outputFile.Close(); err != nil {
+			return err
+		}
+		outputFile = nil
 	}
 	if report.Status == doctor.StatusFail {
 		return errors.New("doctor checks failed")
@@ -1830,7 +1852,7 @@ Usage:
   mizan secret set --id <target-id> --username root --private-key-file ~/.ssh/id_ed25519
   mizan backup create --out mizan-backup.zip
   mizan backup restore --in mizan-backup.zip --home /tmp/mizan-restore
-  mizan doctor [--production] [--json]
+  mizan doctor [--production] [--json] [--out doctor-report.json]
   mizan monitor snapshot --project <id>
   mizan monitor stream --project <id> [--limit 10]
   mizan version [--json]`)

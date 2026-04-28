@@ -395,6 +395,21 @@ func TestProjectGenerateValidateAndSnapshotCommands(t *testing.T) {
 		t.Fatalf("doctor production json output unexpected: %s", stdout.String())
 	}
 	stdout.Reset()
+	doctorReportPath := filepath.Join(t.TempDir(), "production-doctor.json")
+	if err := Run(context.Background(), []string{"doctor", "--home", home, "--production", "--json", "--out", doctorReportPath}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected doctor --out to leave stdout empty, got %s", stdout.String())
+	}
+	doctorReport, err := os.ReadFile(doctorReportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(doctorReport, []byte(`"production": true`)) || !bytes.Contains(doctorReport, []byte(`"production_target_secrets"`)) {
+		t.Fatalf("doctor production report file unexpected: %s", string(doctorReport))
+	}
+	stdout.Reset()
 	if err := Run(context.Background(), []string{"doctor", "--home", home}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}
