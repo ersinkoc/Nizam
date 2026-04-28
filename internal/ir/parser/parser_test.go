@@ -105,6 +105,9 @@ frontend web
 backend be_app
   balance leastconn
   option httpchk GET /healthz
+  option redispatch
+  http-reuse safe
+  stick-table type ip size 1m expire 10m store http_req_rate(10s)
   server app1 10.0.0.1:8080 weight 80 check inter 1500ms rise 4 fall 2 maxconn 100
 
 backend be_api
@@ -405,6 +408,9 @@ func assertCoreRoundTrip(t *testing.T, original, roundTrip *ir.Model) {
 	if got, want := healthSignature(roundTrip), healthSignature(original); got != want {
 		t.Fatalf("health signature changed:\noriginal=%s\ngot=%s", want, got)
 	}
+	if got, want := opaqueSignature(roundTrip), opaqueSignature(original); got != want {
+		t.Fatalf("opaque signature changed:\noriginal=%s\ngot=%s", want, got)
+	}
 	if got, want := cacheSignature(roundTrip), cacheSignature(original); got != want {
 		t.Fatalf("cache signature changed:\noriginal=%s\ngot=%s", want, got)
 	}
@@ -469,6 +475,17 @@ func cacheSignature(m *ir.Model) string {
 	parts := make([]string, 0, len(m.Caches))
 	for _, cache := range m.Caches {
 		parts = append(parts, fmt.Sprintf("%s|%s|%s", cache.Zone, cache.Path, cache.MaxSize))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, ";")
+}
+
+func opaqueSignature(m *ir.Model) string {
+	parts := make([]string, 0, len(m.OpaqueBlocks))
+	for _, block := range m.OpaqueBlocks {
+		lines := append([]string(nil), block.Lines...)
+		sort.Strings(lines)
+		parts = append(parts, fmt.Sprintf("%s|%s", block.Section, strings.Join(lines, ",")))
 	}
 	sort.Strings(parts)
 	return strings.Join(parts, ";")

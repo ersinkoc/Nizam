@@ -10,11 +10,11 @@ Implemented in v0:
 - Bracketed IPv6 bind/server endpoints
 - Quoted directive values, including certificate paths and ACL values that contain spaces or `#`
 - Full-line and whitespace-prefixed inline comments in imported configs
-- Opaque backend lines when present in IR
-- Core parser/generator/parser round-trip coverage for frontends, backends, TLS certs, routing, servers, weights, max connections, and health check timing
+- Opaque backend lines for unsupported backend directives such as `option redispatch`, `http-reuse`, and `stick-table`
+- Core parser/generator/parser round-trip coverage for frontends, backends, TLS certs, routing, servers, weights, max connections, health check timing, and opaque backend directives
 
 Not yet complete:
 
-- Full parser round-trip for advanced directives
-- Stick tables and advanced rate limiting
+- Fully modeled advanced directives beyond opaque preservation
+- First-class stick table and advanced rate limiting editing
 - Source-map driven native error mapping

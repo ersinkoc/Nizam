@@ -144,7 +144,9 @@ func parseHAProxyBackendLine(m *ir.Model, be *ir.Backend, fields []string) {
 			hc.Type = "http"
 			hc.Path = path
 			hc.ExpectedStatus = []int{200}
+			return
 		}
+		appendHAProxyOpaqueBackendLine(m, be, fields)
 	case "server":
 		if len(fields) < 3 {
 			return
@@ -168,7 +170,28 @@ func parseHAProxyBackendLine(m *ir.Model, be *ir.Backend, fields []string) {
 		}
 		m.Servers = append(m.Servers, srv)
 		be.Servers = appendUnique(be.Servers, srv.ID)
+	default:
+		appendHAProxyOpaqueBackendLine(m, be, fields)
 	}
+}
+
+func appendHAProxyOpaqueBackendLine(m *ir.Model, be *ir.Backend, fields []string) {
+	if len(fields) == 0 {
+		return
+	}
+	section := "backend " + be.ID
+	for i := range m.OpaqueBlocks {
+		if m.OpaqueBlocks[i].Section == section {
+			m.OpaqueBlocks[i].Lines = append(m.OpaqueBlocks[i].Lines, strings.Join(fields, " "))
+			return
+		}
+	}
+	m.OpaqueBlocks = append(m.OpaqueBlocks, ir.OpaqueBlock{
+		ID:      normalizeID("opaque", be.ID),
+		Section: section,
+		Lines:   []string{strings.Join(fields, " ")},
+		Anchor:  be.ID,
+	})
 }
 
 func applyHAProxyServerCheckOptions(m *ir.Model, be *ir.Backend, fields []string) {
