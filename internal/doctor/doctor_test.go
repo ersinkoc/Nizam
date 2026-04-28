@@ -58,6 +58,81 @@ func TestRunFailureBranches(t *testing.T) {
 	}
 }
 
+func TestRunProductionWarnings(t *testing.T) {
+	st := store.New(t.TempDir())
+	meta, _, _, err := st.CreateProject(context.Background(), "edge", "", []ir.Engine{ir.EngineHAProxy})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := st.UpsertTarget(context.Background(), meta.ID, store.Target{Name: "edge-01", Host: "lb1.example.com", Engine: ir.EngineHAProxy})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpsertCluster(context.Background(), meta.ID, store.Cluster{Name: "prod", TargetIDs: []string{target.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	report := RunWithOptions(context.Background(), st, func(string) (string, error) { return "/bin/tool", nil }, Options{Production: true})
+	if report.Status != StatusWarn || !report.Production {
+		t.Fatalf("expected production warning report: %+v", report)
+	}
+	for _, name := range []string{
+		"production_gate_on_failure",
+		"production_required_approvals",
+		"production_rollback",
+		"production_post_reload_probe",
+		"production_monitoring",
+		"production_target_secrets",
+	} {
+		if !hasCheck(report, name, StatusWarn) {
+			t.Fatalf("missing production warning %q: %+v", name, report.Checks)
+		}
+	}
+}
+
+func TestRunProductionPassesHardenedTargets(t *testing.T) {
+	st := store.New(t.TempDir())
+	meta, _, _, err := st.CreateProject(context.Background(), "edge", "", []ir.Engine{ir.EngineNginx})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := st.UpsertTarget(context.Background(), meta.ID, store.Target{
+		Name:            "edge-01",
+		Host:            "lb1.example.com",
+		Engine:          ir.EngineNginx,
+		RollbackCommand: "cp /etc/nginx/nginx.conf.bak /etc/nginx/nginx.conf && systemctl reload nginx",
+		PostReloadProbe: "https://edge.example.com/healthz",
+		MonitorEndpoint: "http://edge.example.com/status",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpsertCluster(context.Background(), meta.ID, store.Cluster{Name: "prod", TargetIDs: []string{target.ID}, GateOnFailure: true, RequiredApprovals: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(st.Root(), "secrets"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(st.Root(), "secrets", target.ID+".json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report := RunWithOptions(context.Background(), st, func(string) (string, error) { return "/bin/tool", nil }, Options{Production: true})
+	if report.Status != StatusPass {
+		t.Fatalf("expected hardened production report to pass: %+v", report)
+	}
+	for _, name := range []string{
+		"production_gate_on_failure",
+		"production_required_approvals",
+		"production_rollback",
+		"production_post_reload_probe",
+		"production_monitoring",
+		"production_target_secrets",
+	} {
+		if !hasCheck(report, name, StatusPass) {
+			t.Fatalf("missing production pass %q: %+v", name, report.Checks)
+		}
+	}
+}
+
 func TestRunSecretsFailure(t *testing.T) {
 	st := store.New(t.TempDir())
 	if err := st.Bootstrap(context.Background()); err != nil {

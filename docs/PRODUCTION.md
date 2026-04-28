@@ -163,6 +163,7 @@ Use this minimum gate before executing remote deployment:
 
 ```sh
 mizan doctor --home /var/lib/mizan
+mizan doctor --home /var/lib/mizan --production --json
 mizan generate --project <id> --target haproxy --out candidate.cfg
 mizan validate --project <id> --target haproxy
 mizan deploy --project <id> --target-id <target-id>
@@ -179,6 +180,8 @@ mizan deploy --project <id> --cluster-id <cluster-id> --batch 1 --execute --conf
 mizan monitor snapshot --project <id>
 mizan version --json
 ```
+
+Use the production doctor output as a machine-readable preflight before staging or release. It keeps the normal data-root, project integrity, secret, SSH, and native validator checks, then adds warnings for production hardening gaps: missing deployment targets or clusters, clusters without `gate_on_failure`, clusters with fewer than two required approvals, targets without `rollback_command`, targets without `post_reload_probe`, targets without `monitor_endpoint`, and targets without encrypted credential envelopes.
 
 Use the `snapshot_hash` from the dry-run deployment result as the `--confirm-snapshot` value. If the project changes between preview and execution, Mizan rejects the execute request and forces a fresh dry run.
 

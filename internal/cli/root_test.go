@@ -388,6 +388,13 @@ func TestProjectGenerateValidateAndSnapshotCommands(t *testing.T) {
 		t.Fatalf("doctor json output unexpected: %s", stdout.String())
 	}
 	stdout.Reset()
+	if err := Run(context.Background(), []string{"doctor", "--home", home, "--production", "--json"}, &stdout, &stderr); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte(`"production": true`)) || !bytes.Contains(stdout.Bytes(), []byte(`"production_required_approvals"`)) {
+		t.Fatalf("doctor production json output unexpected: %s", stdout.String())
+	}
+	stdout.Reset()
 	if err := Run(context.Background(), []string{"doctor", "--home", home}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}

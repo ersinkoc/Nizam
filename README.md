@@ -18,7 +18,7 @@ Latest verified release: `v0.1.6`, published from commit `2ce1688`, with signed/
 - Project export endpoint, CLI command, and WebUI download for portable JSON backups
 - Full home backup, inspection, and restore commands with SHA-256 manifest verification for projects, snapshots, targets, audit logs, and encrypted vault envelopes
 - Dockerfile, systemd unit, and Nginx TLS reverse proxy deployment examples
-- `mizan doctor` preflight checks for data root integrity, projects, targets, secrets, SSH, and native validators
+- `mizan doctor` preflight checks for data root integrity, projects, targets, secrets, SSH, native validators, and optional production hardening
 - Universal IR with structural linting, deterministic hashes, mutations, canonical JSON, and structural diffs
 - HAProxy and Nginx import for the supported v0 directive subset, including quoted values, bracketed IPv6 endpoints, and supported nested Nginx contexts
 - HAProxy and Nginx generation from the shared IR
@@ -92,6 +92,7 @@ go run ./cmd/mizan backup create --out mizan-backup.zip
 go run ./cmd/mizan backup inspect --in mizan-backup.zip
 go run ./cmd/mizan backup restore --in mizan-backup.zip --home /tmp/mizan-restore
 go run ./cmd/mizan doctor --json
+go run ./cmd/mizan doctor --production --json
 go run ./cmd/mizan snapshot list --project <id>
 go run ./cmd/mizan snapshot tag --project <id> --label release-1 <snapshot-ref>
 go run ./cmd/mizan target add --project <id> --name edge-01 --host 10.0.0.10 --engine haproxy --monitor-endpoint 'http://10.0.0.10:8404/;csv' --rollback-command 'cp /etc/haproxy/haproxy.cfg.bak /etc/haproxy/haproxy.cfg && systemctl reload haproxy'
@@ -273,6 +274,7 @@ Current verified gates:
 | Browser E2E workflow | Playwright Chromium pass: import, edit, validate, batch approval, rollback dry-run, audit, monitor |
 | GitHub Actions workflow lint | actionlint pass |
 | Deploy drill evidence gate | CI generates and verifies `staging-drill-summary.json` |
+| Production doctor | `mizan doctor --production --json` reports cluster gates, approvals, rollback, probes, monitoring, and target credential coverage |
 | Full npm audit | 0 vulnerabilities |
 | Go vulnerability scan | govulncheck pass: 0 vulnerabilities |
 | Container high/critical scan | Anchore/Grype CI gate pass; Docker Scout local gate pass |
